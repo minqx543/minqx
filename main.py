@@ -118,8 +118,17 @@ async def add_points_for_platform(update: Update, context: ContextTypes.DEFAULT_
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("mypoints", my_points))
 app.add_handler(CommandHandler("leaderboard", leaderboard))
-app.add_handler(CommandHandler("addpoints", add_points_for_platform))  # مثل: /addpoints Twitter
+app.add_handler(CommandHandler("addpoints", add_points_for_platform))
+
+async def post_init(application):
+    await application.bot.delete_webhook(drop_pending_updates=True)
 
 # تشغيل التطبيق
 if __name__ == "__main__":
-    app.run_polling()
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        webhook_url=os.environ.get("WEBHOOK_URL"),
+        secret_token=os.environ.get("SECRET_TOKEN"),
+        post_init=post_init
+    )
