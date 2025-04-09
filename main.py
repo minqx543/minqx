@@ -3,12 +3,13 @@ import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from database import SessionLocal, User, init_db
+from aiohttp import web
 
 # Token من المتغيرات البيئية
 TOKEN = os.environ.get("BOT_TOKEN")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # يجب تعيينه في إعدادات Render
-SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "DEFAULT_SECRET")  # اختياري ولكن مفيد للأمان
-PORT = int(os.environ.get("PORT", 5000))  # PORT المقدم من Render
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # مثال: https://your-app-name.onrender.com
+SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "DEFAULT_SECRET")
+PORT = int(os.environ.get("PORT", 5000))
 
 # إنشاء التطبيق
 app = ApplicationBuilder().token(TOKEN).build()
@@ -47,9 +48,25 @@ async def setup_webhook():
     await app.bot.delete_webhook(drop_pending_updates=True)
     if WEBHOOK_URL:
         await app.bot.set_webhook(
-            url=WEBHOOK_URL,
+            url=f"{WEBHOOK_URL}/webhook",
             secret_token=SECRET_TOKEN
         )
+
+async def handle_webhook(request):
+    """معالجة طلبات Webhook من تليجرام"""
+    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_TOKEN:
+        return web.Response(status=403)
+    
+    data = await request.json()
+    update = Update.de_json(data, app.bot)
+    await app.update_queue.put(update)
+    return web.Response()
+
+async def create_app():
+    """إنشاء تطبيق aiohttp مع تعريف مسار Webhook"""
+    app_web = web.Application()
+    app_web.router.add_post('/webhook', handle_webhook)
+    return app_web
 
 # أمر البدء
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,13 +150,25 @@ app.add_handler(CommandHandler("mypoints", my_points))
 app.add_handler(CommandHandler("leaderboard", leaderboard))
 app.add_handler(CommandHandler("addpoints", add_points_for_platform))
 
+async def run_server():
+    """تشغيل خادم ويب لاستقبال طلبات Webhook"""
+    app_web = await create_app()
+    runner = web.AppRunner(app_web)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    print(f"Server started on port {PORT}")
+    await asyncio.Event().wait()  # تشغيل الخادم إلى أجل غير مسمى
+
 async def main():
     """الدالة الرئيسية لتشغيل التطبيق"""
     await setup_webhook()
     await app.initialize()
     await app.start()
     print("Bot is running and webhook is set up!")
-    await asyncio.Event().wait()  # تشغيل البوت إلى أجل غير مسمى
+    
+    # تشغيل خادم ويب لاستقبال طلبات Webhook
+    await run_server()
 
 # تشغيل التطبيق
 if __name__ == "__main__":
