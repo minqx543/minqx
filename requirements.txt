@@ -2,3 +2,4 @@ python-telegram-bot==20.3
 SQLAlchemy==1.4.46
 psycopg2-binary==2.9.6
 Flask==2.2.2
+gunicorn==20.1.0
