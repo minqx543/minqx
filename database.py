@@ -6,11 +6,14 @@ import os
 import logging
 
 # إعداد التسجيل للخطأ
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # رابط قاعدة البيانات من متغير البيئة
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///database.db")
 
 # إعدادات اتصال أكثر قوة
 engine = create_engine(
@@ -36,21 +39,44 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    referrals_made = relationship("Referral", foreign_keys="[Referral.referred_by]", back_populates="referrer")
-    referrals_received = relationship("Referral", foreign_keys="[Referral.user_id]", back_populates="user")
+    referrals_made = relationship(
+        "Referral",
+        foreign_keys="[Referral.referred_by]",
+        back_populates="referrer",
+        cascade="all, delete-orphan"
+    )
+    referrals_received = relationship(
+        "Referral",
+        foreign_keys="[Referral.user_id]",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
-    def increase_points(self, points: int):
+    def __repr__(self):
+        return f"<User(id={self.id}, username={self.username}, points={self.points})>"
+
+    def increase_points(self, points: int, session=None):
         try:
             self.points += points
+            if session:
+                session.commit()
+            logger.info(f"Increased points for user {self.id} by {points}")
         except Exception as e:
             logger.error(f"Error increasing points: {e}")
+            if session:
+                session.rollback()
             raise
 
-    def increase_referrals(self):
+    def increase_referrals(self, session=None):
         try:
             self.referrals_count += 1
+            if session:
+                session.commit()
+            logger.info(f"Increased referrals count for user {self.id}")
         except Exception as e:
             logger.error(f"Error increasing referrals: {e}")
+            if session:
+                session.rollback()
             raise
 
 class Referral(Base):
@@ -65,16 +91,19 @@ class Referral(Base):
     user = relationship("User", foreign_keys=[user_id], back_populates="referrals_received")
     referrer = relationship("User", foreign_keys=[referred_by], back_populates="referrals_made")
 
+    def __repr__(self):
+        return f"<Referral(id={self.id}, user={self.user_id}, referrer={self.referred_by})>"
+
     def reward_referrer(self, session):
         try:
             referrer_user = session.query(User).filter(User.id == self.referred_by).first()
             if referrer_user:
-                referrer_user.increase_points(self.reward_points)
-                referrer_user.increase_referrals()
-                session.commit()
+                referrer_user.increase_points(self.reward_points, session)
+                referrer_user.increase_referrals(session)
                 logger.info(f"Rewarded referrer {referrer_user.username} with {self.reward_points} points")
+            else:
+                logger.warning(f"Referrer user {self.referred_by} not found")
         except Exception as e:
-            session.rollback()
             logger.error(f"Error rewarding referrer: {e}")
             raise
 
@@ -97,7 +126,7 @@ def get_db():
     finally:
         db.close()
 
-def add_user(db, telegram_id: int, username: str) -> User:
+def add_user(db, telegram_id: int, username: str = None) -> User:
     try:
         db_user = db.query(User).filter(User.telegram_id == telegram_id).first()
         if not db_user:
@@ -111,14 +140,24 @@ def add_user(db, telegram_id: int, username: str) -> User:
             db.commit()
             db.refresh(db_user)
             logger.info(f"Added new user: {username} (ID: {telegram_id})")
+        else:
+            if username and db_user.username != username:
+                db_user.username = username
+                db.commit()
+                db.refresh(db_user)
+                logger.info(f"Updated username for user {telegram_id}")
         return db_user
     except Exception as e:
         db.rollback()
-        logger.error(f"Error adding user: {e}")
+        logger.error(f"Error adding/updating user: {e}")
         raise
 
 def add_referral(db, user_id: int, referred_by: int) -> Referral:
     try:
+        # تجنب الإحالة الذاتية
+        if user_id == referred_by:
+            raise ValueError("User cannot refer themselves")
+
         existing = db.query(Referral).filter(
             Referral.user_id == user_id,
             Referral.referred_by == referred_by
@@ -141,10 +180,17 @@ def add_referral(db, user_id: int, referred_by: int) -> Referral:
         logger.error(f"Error adding referral: {e}")
         raise
 
+def get_user(db, telegram_id: int) -> User:
+    try:
+        return db.query(User).filter(User.telegram_id == telegram_id).first()
+    except Exception as e:
+        logger.error(f"Error getting user: {e}")
+        raise
+
 def get_user_points(db, telegram_id: int) -> int:
     try:
-        db_user = db.query(User).filter(User.telegram_id == telegram_id).first()
-        return db_user.points if db_user else 0
+        user = get_user(db, telegram_id)
+        return user.points if user else 0
     except Exception as e:
         logger.error(f"Error getting user points: {e}")
         raise
@@ -156,9 +202,25 @@ def get_top_players(db, limit: int = 10):
         logger.error(f"Error getting top players: {e}")
         raise
 
-def get_top_referrals(db, limit: int = 10):
+def get_top_referrers(db, limit: int = 10):
     try:
         return db.query(User).order_by(User.referrals_count.desc()).limit(limit).all()
     except Exception as e:
-        logger.error(f"Error getting top referrals: {e}")
+        logger.error(f"Error getting top referrers: {e}")
         raise
+
+def update_user_points(db, telegram_id: int, points: int):
+    try:
+        user = get_user(db, telegram_id)
+        if user:
+            user.increase_points(points, db)
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating user points: {e}")
+        raise
+
+# تهيئة قاعدة البيانات عند الاستيراد
+init_db()
