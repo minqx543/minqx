@@ -129,9 +129,9 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             top_players = db.query(User).order_by(User.points.desc()).limit(10).all()
             if top_players:
-                msg = "🏆 أفضل 10 لاعبين:\n\n" + "\n".join(
-                    f"{i}. @{p.username if p.username else 'لاعب'} - {p.points} نقطة"
-                    for i, p in enumerate(top_players, 1)
+                players_list = [f"{i}. @{p.username if p.username else 'لاعب'} - {p.points} نقطة" 
+                              for i, p in enumerate(top_players, 1)]
+                msg = "🏆 أفضل 10 لاعبين:\n\n" + "\n".join(players_list)
                 await update.message.reply_text(msg)
             else:
                 await update.message.reply_text("لا يوجد لاعبين حتى الآن.")
@@ -162,9 +162,9 @@ async def top_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             top_referrers = db.query(User).order_by(User.referrals_count.desc()).limit(10).all()
             if top_referrers:
-                msg = "🏆 أفضل 10 محيلين:\n\n" + "\n".join(
-                    f"{i}. @{r.username if r.username else 'مستخدم'} - {r.referrals_count} إحالة"
-                    for i, r in enumerate(top_referrers, 1))
+                referrers_list = [f"{i}. @{r.username if r.username else 'مستخدم'} - {r.referrals_count} إحالة"
+                                for i, r in enumerate(top_referrers, 1)]
+                msg = "🏆 أفضل 10 محيلين:\n\n" + "\n".join(referrers_list)
                 await update.message.reply_text(msg)
             else:
                 await update.message.reply_text("لا يوجد إحالات حتى الآن.")
