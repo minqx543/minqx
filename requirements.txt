@@ -3,3 +3,4 @@ SQLAlchemy==1.4.46
 psycopg2-binary==2.9.6
 Flask==2.2.2
 gunicorn==20.1.0
+aiohttp==3.9.3
