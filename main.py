@@ -1,10 +1,14 @@
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from database import SessionLocal, User, init_db
 
 # Token من المتغيرات البيئية
 TOKEN = os.environ.get("BOT_TOKEN")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # يجب تعيينه في إعدادات Render
+SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "DEFAULT_SECRET")  # اختياري ولكن مفيد للأمان
+PORT = int(os.environ.get("PORT", 5000))  # PORT المقدم من Render
 
 # إنشاء التطبيق
 app = ApplicationBuilder().token(TOKEN).build()
@@ -37,6 +41,15 @@ icons = {
     "Facebook": "📘",
     "Telegram Group": "📱"
 }
+
+async def setup_webhook():
+    """تهيئة Webhook وحذف التحديثات العالقة"""
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    if WEBHOOK_URL:
+        await app.bot.set_webhook(
+            url=WEBHOOK_URL,
+            secret_token=SECRET_TOKEN
+        )
 
 # أمر البدء
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -120,15 +133,19 @@ app.add_handler(CommandHandler("mypoints", my_points))
 app.add_handler(CommandHandler("leaderboard", leaderboard))
 app.add_handler(CommandHandler("addpoints", add_points_for_platform))
 
-async def post_init(application):
-    await application.bot.delete_webhook(drop_pending_updates=True)
+async def main():
+    """الدالة الرئيسية لتشغيل التطبيق"""
+    await setup_webhook()
+    await app.initialize()
+    await app.start()
+    print("Bot is running and webhook is set up!")
+    await asyncio.Event().wait()  # تشغيل البوت إلى أجل غير مسمى
 
 # تشغيل التطبيق
 if __name__ == "__main__":
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        webhook_url=os.environ.get("WEBHOOK_URL"),
-        secret_token=os.environ.get("SECRET_TOKEN"),
-        post_init=post_init
-    )
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot is shutting down...")
+    finally:
+        asyncio.run(app.shutdown())
