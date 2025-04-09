@@ -178,15 +178,15 @@ async def top_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # تسجيل الأوامر
 commands = [
-    ("start", "🎉 بدء استخدام البوت"),
-    ("points", "🤑 عرض نقاطك"),
-    ("top", "🥇 أفضل 10 لاعبين"),
-    ("referrals", "🔥 رابط الإحالات"),
-    ("topreferrals", "🥇 أفضل 10 محيلين")
+    ("start", start),
+    ("points", my_points),
+    ("top", leaderboard),
+    ("referrals", referrals),
+    ("topreferrals", top_referrals)
 ]
 
-for cmd, desc in commands:
-    app.add_handler(CommandHandler(cmd, eval(cmd)))
+for cmd, handler in commands:
+    app.add_handler(CommandHandler(cmd, handler))
 
 # أوامر المنصات
 platforms = {
