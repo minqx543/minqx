@@ -3,15 +3,16 @@ import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from aiohttp import web
 
-# 1. إعدادات قاعدة البيانات
+# 1. إعدادات قاعدة البيانات (الطريقة الحديثة المتوافقة مع SQLAlchemy 2.0)
+class Base(DeclarativeBase):
+    pass
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///database.db")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 # 2. نموذج المستخدم
 class User(Base):
@@ -63,7 +64,7 @@ icons = {
 # 8. أوامر البوت
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    username = update.effective_user.username
+    username = update.effective_user.username or "مستخدم"
 
     db = SessionLocal()
     try:
@@ -73,16 +74,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.add(user)
             db.commit()
         
-        welcome_message = f"🎉 مرحباً @{username} في MINQX!\n\n"
-        welcome_message += "💥 لقد انضممت إلى مجتمعنا! استمر في إتمام المهام واحصل على المكافآت.\n\n"
-        welcome_message += f"🎉 Welcome @{username} to MINQX!\n\n"
-        welcome_message += "💥 You have joined our community! Keep completing tasks and earn rewards.\n\n"
-        welcome_message += "\n📱 تابعنا على المنصات التالية:\n"
-        for platform, link in platforms.items():
-            welcome_message += f"{icons[platform]} {platform}: {link}\n"
-        welcome_message += f"\n🌐 لمزيد من المعلومات، قم بزيارة: {site_url}"
+        welcome_message = (
+            f"🎉 مرحباً @{username} في MINQX!\n\n"
+            "💥 لقد انضممت إلى مجتمعنا! استمر في إتمام المهام واحصل على المكافآت.\n\n"
+            f"🎉 Welcome @{username} to MINQX!\n\n"
+            "💥 You have joined our community! Keep completing tasks and earn rewards.\n\n"
+            "📱 تابعنا على المنصات التالية:\n"
+        )
+        welcome_message += "\n".join(f"{icons[platform]} {platform}: {link}" for platform, link in platforms.items())
+        welcome_message += f"\n\n🌐 لمزيد من المعلومات، قم بزيارة: {site_url}"
 
         await update.message.reply_photo(avatar_url, caption=welcome_message)
+    except Exception as e:
+        print(f"Error in start command: {e}")
     finally:
         db.close()
 
@@ -95,6 +99,8 @@ async def my_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🎯 رصيدك الحالي: {user.points} نقاط")
         else:
             await update.message.reply_text("❗️لا يوجد سجل لك بعد، ابدأ بالأمر /start")
+    except Exception as e:
+        print(f"Error in my_points command: {e}")
     finally:
         db.close()
 
@@ -111,6 +117,8 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = f"@{player.username}" if player.username else f"لاعب {i}"
             msg += f"{i}. {name} - {player.points} نقاط\n"
         await update.message.reply_text(msg)
+    except Exception as e:
+        print(f"Error in leaderboard command: {e}")
     finally:
         db.close()
 
@@ -136,26 +144,35 @@ async def add_points_for_platform(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(f"✅ تم إضافة 10 نقاط لك لمتابعتك {platform}. رصيدك الآن: {user.points} نقطة.")
         else:
             await update.message.reply_text("❗️لا يوجد سجل لك بعد، ابدأ بالأمر /start")
+    except Exception as e:
+        print(f"Error in add_points_for_platform: {e}")
     finally:
         db.close()
 
 # 9. إعداد Webhook
 async def setup_webhook():
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    if WEBHOOK_URL:
-        await app.bot.set_webhook(
-            url=f"{WEBHOOK_URL}/webhook",
-            secret_token=SECRET_TOKEN
-        )
+    try:
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        if WEBHOOK_URL:
+            await app.bot.set_webhook(
+                url=f"{WEBHOOK_URL}/webhook",
+                secret_token=SECRET_TOKEN
+            )
+    except Exception as e:
+        print(f"Error setting up webhook: {e}")
 
 async def handle_webhook(request):
-    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_TOKEN:
-        return web.Response(status=403)
-    
-    data = await request.json()
-    update = Update.de_json(data, app.bot)
-    await app.update_queue.put(update)
-    return web.Response()
+    try:
+        if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_TOKEN:
+            return web.Response(status=403)
+        
+        data = await request.json()
+        update = Update.de_json(data, app.bot)
+        await app.update_queue.put(update)
+        return web.Response()
+    except Exception as e:
+        print(f"Error handling webhook: {e}")
+        return web.Response(status=500)
 
 async def create_app():
     app_web = web.Application()
@@ -165,13 +182,16 @@ async def create_app():
 
 # 10. تشغيل الخادم
 async def run_server():
-    app_web = await create_app()
-    runner = web.AppRunner(app_web)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-    print(f"Bot is running on port {PORT}")
-    await asyncio.Event().wait()
+    try:
+        app_web = await create_app()
+        runner = web.AppRunner(app_web)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', PORT)
+        await site.start()
+        print(f"Bot is running on port {PORT}")
+        await asyncio.Event().wait()
+    except Exception as e:
+        print(f"Server error: {e}")
 
 # 11. الربط والتشغيل
 app.add_handler(CommandHandler("start", start))
@@ -180,16 +200,21 @@ app.add_handler(CommandHandler("leaderboard", leaderboard))
 app.add_handler(CommandHandler("addpoints", add_points_for_platform))
 
 async def main():
-    await setup_webhook()
-    await app.initialize()
-    await app.start()
-    print("Webhook set up successfully!")
-    await run_server()
+    try:
+        await setup_webhook()
+        await app.initialize()
+        await app.start()
+        print("Webhook set up successfully!")
+        await run_server()
+    except Exception as e:
+        print(f"Application error: {e}")
+    finally:
+        await app.shutdown()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Bot is shutting down...")
-    finally:
-        asyncio.run(app.shutdown())
+    except Exception as e:
+        print(f"Fatal error: {e}")
