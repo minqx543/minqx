@@ -11,7 +11,8 @@ from telegram.ext import (
     MessageHandler,
     CallbackContext,
     ConversationHandler,
-    filters
+    filters,
+    CallbackQueryHandler
 )
 
 # تكوين التسجيل
@@ -87,6 +88,34 @@ BOT_USERNAME = "MinQX_Bot"
 WELCOME_IMAGE_URL = "https://github.com/minqx543/minqx/blob/main/src/default_avatar.jpg.png?raw=true"
 BOT_LINK = f"https://t.me/{BOT_USERNAME}"
 
+# روابط المنصات الاجتماعية
+SOCIAL_MEDIA_LINKS = {
+    "تويتر": {
+        "url": "https://x.com/MinQX_Official?t=xQGqqJLnypq5TKP4jmDm2A&s=09",
+        "icon": "🐦"
+    },
+    "تيك توك": {
+        "url": "https://www.tiktok.com/@minqx2?_t=ZS-8u9g1d9GPLe&_r=1",
+        "icon": "🎵"
+    },
+    "إنستجرام": {
+        "url": "https://www.instagram.com/minqx2025?igsh=MTRhNmJtNm1wYWxqYw==",
+        "icon": "📷"
+    },
+    "يوتيوب": {
+        "url": "https://www.youtube.com/@MinQX_Official",
+        "icon": "▶️"
+    },
+    "فيسبوك": {
+        "url": "https://www.facebook.com/share/1BmovBrBn4/",
+        "icon": "👍"
+    },
+    "تيليجرام": {
+        "url": "https://t.me/minqx1official",
+        "icon": "✈️"
+    }
+}
+
 def generate_ref_code(user_id: int) -> str:
     return f"REF{user_id % 10000:04d}"
 
@@ -131,7 +160,8 @@ async def start(update: Update, context: CallbackContext) -> None:
         "/tasks - ✅️ المهام/Tasks ✅️\n"
         "/top - 🥇 المتصدرين/Top Players 🥇\n"
         "/referrals - 🔥 الإحالات/Referrals 🔥\n"
-        "/topreferrals - 🥇 أفضل المحيلين/Top Referrals 🥇"
+        "/topreferrals - 🥇 أفضل المحيلين/Top Referrals 🥇\n"
+        "/social - 📢 منصاتنا الاجتماعية"
     )
     
     keyboard = [
@@ -139,6 +169,9 @@ async def start(update: Update, context: CallbackContext) -> None:
             InlineKeyboardButton("🚀 بدء الاستخدام", callback_data="get_started"),
             InlineKeyboardButton("📢 مشاركة البوت", 
                                url=f"https://t.me/share/url?url={BOT_LINK}&text=انضم%20إلى%20@{BOT_USERNAME}%20للحصول%20على%20مزايا%20رائعة!")
+        ],
+        [
+            InlineKeyboardButton("📢 منصاتنا الاجتماعية", callback_data="social_media")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -272,6 +305,50 @@ async def show_top_referrals(update: Update, context: CallbackContext) -> None:
         logger.error(f"خطأ في عرض أفضل المحيلين: {e}")
         await update.message.reply_text("⚠️ حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً.")
 
+async def show_social_media(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    message = "📢 تابعنا على منصاتنا الاجتماعية واحصل على 10 نقاط لكل متابعة:\n\n"
+    
+    keyboard = []
+    for platform, data in SOCIAL_MEDIA_LINKS.items():
+        message += f"{data['icon']} {platform}: {data['url']}\n"
+        keyboard.append([InlineKeyboardButton(
+            f"{data['icon']} {platform}",
+            url=data['url']
+        )])
+    
+    # زر لتأكيد المتابعة
+    keyboard.append([InlineKeyboardButton(
+        "✅ تأكيد المتابعة",
+        callback_data="confirm_follow"
+    )])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(message, reply_markup=reply_markup)
+
+async def handle_follow_confirmation(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    if query.data == "confirm_follow":
+        try:
+            conn = db_manager.get_connection()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET score = score + 10 WHERE user_id = %s",
+                    (user_id,)
+                )
+                conn.commit()
+                
+                await query.answer("🎉 تم منحك 10 نقاط لمتابعتك لنا! شكراً لك!")
+                await query.edit_message_text(
+                    text=query.message.text + "\n\n✅ تم تأكيد متابعتك وحصولك على 10 نقاط!",
+                    reply_markup=None
+                )
+        except Exception as e:
+            logger.error(f"خطأ في تحديث النقاط: {e}")
+            await query.answer("⚠️ حدث خطأ أثناء تحديث نقاطك. يرجى المحاولة لاحقاً.")
+
 async def add_task(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text("📝 ما هي المهمة التي تريد إضافتها؟")
     return TASK_NAME
@@ -370,6 +447,8 @@ def main():
         application.add_handler(CommandHandler("top", show_top_players))
         application.add_handler(CommandHandler("referrals", show_referral_link))
         application.add_handler(CommandHandler("topreferrals", show_top_referrals))
+        application.add_handler(CommandHandler("social", show_social_media))
+        application.add_handler(CallbackQueryHandler(handle_follow_confirmation, pattern="^confirm_follow$"))
         
         # معالج المحادثة
         conv_handler = ConversationHandler(
