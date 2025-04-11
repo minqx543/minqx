@@ -84,7 +84,7 @@ def init_db():
 
 # روابط ثابتة
 BOT_USERNAME = "MinQX_Bot"
-WELCOME_IMAGE_URL = "https://raw.githubusercontent.com/minqx543/minqx/main/src/default_avatar.jpg.png"
+WELCOME_IMAGE_URL = "https://raw.githubusercontent.com/minqx543/minqx/main/src/default_avatar.jpg.png"  # الرابط المعدل
 BOT_LINK = f"https://t.me/{BOT_USERNAME}"
 
 def generate_ref_code(user_id: int) -> str:
@@ -113,7 +113,6 @@ async def start(update: Update, context: CallbackContext) -> None:
                         (referrer_code, user_id))
                     if cur.fetchone():
                         await update.message.reply_text("🎉 تمت إحالتك بنجاح! حصلت على 10 نقاط إضافية!")
-            
             conn.commit()
     except Exception as e:
         logger.error(f"خطأ في قاعدة البيانات: {e}")
@@ -145,30 +144,112 @@ async def start(update: Update, context: CallbackContext) -> None:
         await update.message.reply_photo(
             photo=WELCOME_IMAGE_URL,
             caption=welcome_message,
-            reply_markup=reply_markup
-        )
+            reply_markup=reply_markup)
     except Exception as e:
         logger.error(f"خطأ في إرسال الصورة الترحيبية: {e}")
-        try:
-            # حل بديل إذا فشل إرسال الصورة
-            await update.message.reply_text(welcome_message, reply_markup=reply_markup)
-            
-            # يمكنك إضافة محاولة ثانية باستخدام requests إذا لزم الأمر
-            import requests
-            from io import BytesIO
-            response = requests.get(WELCOME_IMAGE_URL)
-            if response.status_code == 200:
-                photo_file = BytesIO(response.content)
-                await update.message.reply_photo(
-                    photo=photo_file,
-                    caption=welcome_message,
-                    reply_markup=reply_markup
-                )
-        except Exception as backup_error:
-            logger.error(f"خطأ في الحل البديل: {backup_error}")
-            await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
-# ... (بقية الدوال تبقى كما هي بدون تغيير)
+async def show_score(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT score, ref_code FROM users WHERE user_id = %s",
+                (user_id,))
+            result = cur.fetchone()
+            
+            if result:
+                score, ref_code = result
+                ref_link = f"https://t.me/{BOT_USERNAME}?start={ref_code}"
+                message = (
+                    f"🎯 نقاطك الحالية: {score}\n\n"
+                    f"🔗 رابط الإحالة الخاص بك:\n{ref_link}\n\n"
+                    "كلما أحلت أصدقاء، تحصل على 10 نقاط لكل إحالة!")
+                await update.message.reply_text(message)
+            else:
+                await update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
+    except Exception as e:
+        logger.error(f"خطأ في عرض النقاط: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
+
+async def add_task(update: Update, context: CallbackContext) -> int:
+    await update.message.reply_text("📝 ما هي المهمة التي تريد إضافتها؟")
+    return TASK_NAME
+
+async def task_name_handler(update: Update, context: CallbackContext) -> int:
+    context.user_data['task_name'] = update.message.text
+    await update.message.reply_text("📅 متى يجب إكمال هذه المهمة؟ (YYYY-MM-DD)")
+    return TASK_DUE_DATE
+
+async def task_due_date_handler(update: Update, context: CallbackContext) -> int:
+    try:
+        due_date = datetime.strptime(update.message.text, "%Y-%m-%d").date()
+        context.user_data['due_date'] = due_date
+        await update.message.reply_text("📄 هل تريد إضافة وصف للمهمة؟ (اختياري)")
+        return TASK_DESCRIPTION
+    except ValueError:
+        await update.message.reply_text("⚠️ تنسيق التاريخ غير صحيح. يرجى إدخال التاريخ بالصيغة YYYY-MM-DD")
+        return TASK_DUE_DATE
+
+async def task_description_handler(update: Update, context: CallbackContext) -> int:
+    user_id = update.effective_user.id
+    description = update.message.text
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO tasks (user_id, name, due_date, description) "
+                "VALUES (%s, %s, %s, %s)",
+                (user_id, 
+                 context.user_data['task_name'], 
+                 context.user_data['due_date'], 
+                 description))
+            conn.commit()
+            await update.message.reply_text("✅ تمت إضافة المهمة بنجاح!")
+    except Exception as e:
+        logger.error(f"خطأ في إضافة المهمة: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء إضافة المهمة. يرجى المحاولة لاحقاً.")
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: CallbackContext) -> int:
+    await update.message.reply_text("تم الإلغاء.")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def list_tasks(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT task_id, name, due_date, description, completed "
+                "FROM tasks WHERE user_id = %s ORDER BY due_date",
+                (user_id,))
+            tasks = cur.fetchall()
+            
+            if tasks:
+                message = "📋 مهامك:\n\n"
+                for task in tasks:
+                    task_id, name, due_date, description, completed = task
+                    status = "✅" if completed else "⏳"
+                    message += (
+                        f"{status} {name} - {due_date}\n"
+                        f"ID: {task_id}\n")
+                    if description:
+                        message += f"وصف: {description}\n"
+                    message += "\n"
+                await update.message.reply_text(message)
+            else:
+                await update.message.reply_text("📭 ليس لديك أي مهام حالياً.")
+    except Exception as e:
+        logger.error(f"خطأ في عرض المهام: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً.")
 
 def keep_alive():
     while True:
@@ -212,7 +293,7 @@ def main():
             .post_init(post_init) \
             .build()
         
-        # تسجيل المعالجات
+        # إضافة المعالجات
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("score", show_score))
         application.add_handler(CommandHandler("tasks", list_tasks))
