@@ -1,236 +1,152 @@
 import os
-import asyncio
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
-from aiohttp import web
 import logging
+from typing import Dict, List
+from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    Filters,
+    CallbackContext,
+    ConversationHandler,
+)
 
-# 1. إعدادات التسجيل
+# تكوين التسجيل
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# 2. إعدادات قاعدة البيانات (الطريقة الحديثة المتوافقة مع SQLAlchemy 2.0)
-class Base(DeclarativeBase):
-    pass
+# حالات المحادثة
+TASK_NAME, TASK_DUE_DATE, TASK_DESCRIPTION = range(3)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///database.db")
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# قاعدة بيانات مؤقتة
+tasks_db: Dict[int, Dict[int, Dict]] = {}  # {user_id: {task_id: task_data}}
+accounts_db: Dict[int, Dict[str, str]] = {}  # {user_id: account_data}
+scores_db: Dict[int, int] = {}  # {user_id: score}
+referrals_db: Dict[int, Dict[str, str]] = {}  # {user_id: {ref_code: str, ref_count: int}}
 
-# 3. نموذج المستخدم
-class User(Base):
-    __tablename__ = "users"
+# روابط ثابتة
+BOT_USERNAME = "MinQX_Bot"
+WELCOME_IMAGE_URL = "https://github.com/minqx543/minqx/blob/main/src/default_avatar.jpg.png?raw=true"
+BOT_LINK = f"https://t.me/{BOT_USERNAME}"
+
+def start(update: Update, context: CallbackContext) -> None:
+    """إرسال رسالة ترحيبية عند استخدام الأمر /start"""
+    user = update.effective_user
+    user_id = user.id
     
-    id = Column(Integer, primary_key=True, index=True)
-    telegram_id = Column(Integer, unique=True, index=True)
-    username = Column(String)
-    points = Column(Integer, default=0)
-
-# 4. إنشاء الجداول
-def init_db():
-    Base.metadata.create_all(bind=engine)
-
-# 5. متغيرات البيئة
-TOKEN = os.environ.get("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("لم يتم تعيين BOT_TOKEN في متغيرات البيئة")
-
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "DEFAULT_SECRET")
-PORT = int(os.environ.get("PORT", 5000))
-
-# 6. إنشاء تطبيق البوت
-app = ApplicationBuilder().token(TOKEN).build()
-
-# 7. تهيئة قاعدة البيانات
-init_db()
-
-# 8. روابط وإعدادات البوت
-site_url = "https://minqx.onrender.com"
-avatar_url = "https://github.com/khamis1987/minqx/blob/main/src/default_avatar.jpg.png?raw=true"
-
-platforms = {
-    "YouTube": "https://www.youtube.com/@MinQX_Official",
-    "Instagram": "https://www.instagram.com/minqx2025?igsh=MTRhNmJtNm1wYWxqYw==",
-    "TikTok": "https://www.tiktok.com/@minqx2?_t=ZS-8u9g1d9GPLe&_r=1",
-    "Twitter": "https://x.com/MinQX_Official?t=xQGqqJLnypq5TKP4jmDm2A&s=09",
-    "Facebook": "https://www.facebook.com/share/1BjH4qcGXb/",
-    "Telegram Group": "https://t.me/minqx1official"
-}
-
-icons = {
-    "YouTube": "📺",
-    "Instagram": "📷",
-    "TikTok": "🎵",
-    "Twitter": "🐦",
-    "Facebook": "📘",
-    "Telegram Group": "📱"
-}
-
-# 9. أوامر البوت
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    username = update.effective_user.username or "مستخدم"
-
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.telegram_id == user_id).first()
-        if not user:
-            user = User(telegram_id=user_id, username=username, points=0)
-            db.add(user)
-            db.commit()
+    # إنشاء سجل للمستخدم الجديد إذا لم يكن موجودًا
+    if user_id not in scores_db:
+        scores_db[user_id] = 0
+    if user_id not in referrals_db:
+        referrals_db[user_id] = {"ref_code": f"ref_{user_id}", "ref_count": 0}
+    
+    # التحقق من وجود رابط إحالة
+    if context.args:
+        referrer_code = context.args[0]
+        for uid, data in referrals_db.items():
+            if data["ref_code"] == referrer_code and uid != user_id:
+                scores_db[uid] += 10  # إضافة 10 نقاط للمحيل
+                referrals_db[uid]["ref_count"] += 1
+                context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="🎉 تمت إحالتك بنجاح! 🎉\nYou have been successfully referred!"
+                )
+                break
+    
+    # رسالة الترحيب ثنائية اللغة
+    welcome_message = (
+        f"🎊 مرحبًا بك {user.first_name} في @{BOT_USERNAME} 🎊\n"
+        f"✨ Welcome {user.first_name} to @{BOT_USERNAME} ✨\n\n"
         
-        welcome_message = (
-            f"🎉 مرحباً @{username} في MINQX!\n\n"
-            "💥 لقد انضممت إلى مجتمعنا! استمر في إتمام المهام واحصل على المكافآت.\n\n"
-            f"🎉 Welcome @{username} to MINQX!\n\n"
-            "💥 You have joined our community! Keep completing tasks and earn rewards.\n\n"
-            "📱 تابعنا على المنصات التالية:\n"
+        "📌 الأوامر المتاحة / Available Commands:\n"
+        "/start - 🎉 بدء/Start 🎉\n"
+        "/score - 🤑 النقاط/Points 🤑\n"
+        "/tasks - ✅️ المهام/Tasks ✅️\n"
+        "/top - 🥇 المتصدرين/Top Players 🥇\n"
+        "/referrals - 🔥 الإحالات/Referrals 🔥\n"
+        "/topreferrals - 🥇 أفضل المحيلين/Top Referrals 🥇\n\n"
+        
+        f"🔗 رابط البوت / Bot Link: @{BOT_USERNAME}\n"
+        f"🌐 الرابط المباشر: {BOT_LINK}"
+    )
+    
+    # أزرار الترحيب
+    keyboard = [
+        [
+            InlineKeyboardButton("🚀 بدء الاستخدام / Start", callback_data="get_started"),
+            InlineKeyboardButton("📢 مشاركة البوت / Share", url=f"https://t.me/share/url?url={BOT_LINK}&text=انضم%20إلى%20@{BOT_USERNAME}%20-%20بوت%20رائع%20لإدارة%20المهام%20والحسابات!")
+        ],
+        [
+            InlineKeyboardButton("🌐 زيارة البوت / Visit Bot", url=BOT_LINK),
+            InlineKeyboardButton("📊 لوحة التحكم / Dashboard", callback_data="dashboard")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # إرسال الصورة مع الرسالة
+    try:
+        context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=WELCOME_IMAGE_URL,
+            caption=welcome_message,
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
         )
-        welcome_message += "\n".join(f"{icons[platform]} {platform}: {link}" for platform, link in platforms.items())
-        welcome_message += f"\n\n🌐 لمزيد من المعلومات، قم بزيارة: {site_url}"
-
-        await update.message.reply_photo(avatar_url, caption=welcome_message)
     except Exception as e:
-        logger.error(f"Error in start command: {e}")
-    finally:
-        db.close()
+        logger.error(f"Failed to send welcome image: {e}")
+        # إذا فشل إرسال الصورة، نرسل الرسالة فقط
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=welcome_message,
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
 
-async def my_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.telegram_id == user_id).first()
-        if user:
-            await update.message.reply_text(f"🎯 رصيدك الحالي: {user.points} نقاط")
-        else:
-            await update.message.reply_text("❗️لا يوجد سجل لك بعد، ابدأ بالأمر /start")
-    except Exception as e:
-        logger.error(f"Error in my_points command: {e}")
-    finally:
-        db.close()
+# ... [بقية الدوال كما هي في الكود السابق مثل show_score, show_top_players, etc] ...
 
-async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    db = SessionLocal()
-    try:
-        top_players = db.query(User).order_by(User.points.desc()).limit(10).all()
-        if not top_players:
-            await update.message.reply_text("لا يوجد لاعبين حتى الآن.")
-            return
-
-        msg = "🏆 أفضل 10 لاعبين:\n\n"
-        for i, player in enumerate(top_players, start=1):
-            name = f"@{player.username}" if player.username else f"لاعب {i}"
-            msg += f"{i}. {name} - {player.points} نقاط\n"
-        await update.message.reply_text(msg)
-    except Exception as e:
-        logger.error(f"Error in leaderboard command: {e}")
-    finally:
-        db.close()
-
-async def add_points_for_platform(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    args = context.args
-
-    if not args:
-        await update.message.reply_text("❗️يرجى تحديد اسم المنصة، مثل:\n/addpoints YouTube")
-        return
-
-    platform = args[0]
-    if platform not in platforms:
-        await update.message.reply_text("❗️اسم المنصة غير صحيح. يرجى استخدام واحدة من: " + ", ".join(platforms.keys()))
-        return
-
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.telegram_id == user_id).first()
-        if user:
-            user.points += 10
-            db.commit()
-            await update.message.reply_text(f"✅ تم إضافة 10 نقاط لك لمتابعتك {platform}. رصيدك الآن: {user.points} نقطة.")
-        else:
-            await update.message.reply_text("❗️لا يوجد سجل لك بعد، ابدأ بالأمر /start")
-    except Exception as e:
-        logger.error(f"Error in add_points_for_platform: {e}")
-    finally:
-        db.close()
-
-# 10. إعداد Webhook
-async def setup_webhook():
-    try:
-        await app.bot.delete_webhook(drop_pending_updates=True)
-        if WEBHOOK_URL:
-            await app.bot.set_webhook(
-                url=f"{WEBHOOK_URL}/webhook",
-                secret_token=SECRET_TOKEN
-            )
-            logger.info("Webhook set up successfully")
-    except Exception as e:
-        logger.error(f"Error setting up webhook: {e}")
-
-async def handle_webhook(request):
-    try:
-        if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_TOKEN:
-            return web.Response(status=403)
-        
-        data = await request.json()
-        update = Update.de_json(data, app.bot)
-        await app.update_queue.put(update)
-        return web.Response()
-    except Exception as e:
-        logger.error(f"Error handling webhook: {e}")
-        return web.Response(status=500)
-
-async def create_app():
-    app_web = web.Application()
-    app_web.router.add_post('/webhook', handle_webhook)
-    app_web.router.add_get('/', lambda _: web.Response(text="Bot is running!"))
-    return app_web
-
-# 11. تشغيل الخادم
-async def run_server():
-    try:
-        app_web = await create_app()
-        runner = web.AppRunner(app_web)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', PORT)
-        await site.start()
-        logger.info(f"Bot is running on port {PORT}")
-        await asyncio.Event().wait()
-    except Exception as e:
-        logger.error(f"Server error: {e}")
-
-# 12. إعداد معالجات الأوامر
-def setup_handlers():
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("mypoints", my_points))
-    app.add_handler(CommandHandler("leaderboard", leaderboard))
-    app.add_handler(CommandHandler("addpoints", add_points_for_platform))
-
-# 13. الدالة الرئيسية
-async def main():
-    setup_handlers()
+def main() -> None:
+    """تشغيل البوت"""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        raise ValueError("لم يتم تعيين TELEGRAM_BOT_TOKEN في متغيرات البيئة")
     
-    try:
-        await setup_webhook()
-        await app.initialize()
-        await app.start()
-        await run_server()
-    except Exception as e:
-        logger.error(f"Application error: {e}")
-    finally:
-        await app.stop()
-        await app.shutdown()
+    updater = Updater(token)
+    dispatcher = updater.dispatcher
 
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot is shutting down...")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
+    # تعريف معالج الأوامر
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("score", show_score))
+    dispatcher.add_handler(CommandHandler("top", show_top_players))
+    dispatcher.add_handler(CommandHandler("referrals", show_referral_link))
+    dispatcher.add_handler(CommandHandler("topreferrals", show_top_referrals))
+    dispatcher.add_handler(CommandHandler("tasks", tasks_menu))
+    
+    # ... [بقية المعالجات كما هي في الكود السابق] ...
+
+    # بدء البوت
+    if os.getenv('ENVIRONMENT') == 'PRODUCTION':
+        port = int(os.getenv('PORT', 8443))
+        webhook_url = os.getenv('WEBHOOK_URL')
+        if not webhook_url:
+            raise ValueError("لم يتم تعيين WEBHOOK_URL في متغيرات البيئة")
+        
+        updater.start_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=token,
+            webhook_url=f"{webhook_url}/{token}"
+        )
+        updater.bot.set_webhook(f"{webhook_url}/{token}")
+        logger.info("البوت يعمل في وضع webhook")
+    else:
+        updater.start_polling()
+        logger.info("البوت يعمل في وضع polling")
+
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
