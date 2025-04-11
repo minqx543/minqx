@@ -3,13 +3,11 @@ import logging
 import time
 import threading
 import psycopg2
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater,
+    ApplicationBuilder,
     CommandHandler,
-    CallbackQueryHandler,
     MessageHandler,
     CallbackContext,
     ConversationHandler,
@@ -18,7 +16,7 @@ from telegram.ext import (
 
 # تكوين التسجيل
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -27,12 +25,10 @@ logger = logging.getLogger(__name__)
 TASK_NAME, TASK_DUE_DATE, TASK_DESCRIPTION = range(3)
 
 class DatabaseManager:
-    """فئة لإدارة اتصالات قاعدة البيانات"""
     def __init__(self):
         self.conn = None
-        
+    
     def get_connection(self):
-        """الحصول على اتصال بقاعدة البيانات"""
         if self.conn is None or self.conn.closed:
             self.conn = psycopg2.connect(
                 host=os.getenv('DB_HOST'),
@@ -44,24 +40,18 @@ class DatabaseManager:
         return self.conn
     
     def close(self):
-        """إغلاق اتصال قاعدة البيانات"""
         if self.conn and not self.conn.closed:
             self.conn.close()
-            self.conn = None
 
-# تهيئة مدير قاعدة البيانات
 db_manager = DatabaseManager()
 
-# تهيئة الجداول
 def init_db():
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
-            # حذف الجداول إذا كانت موجودة (لأغراض التطوير فقط)
             cur.execute("DROP TABLE IF EXISTS tasks CASCADE")
             cur.execute("DROP TABLE IF EXISTS users CASCADE")
             
-            # إنشاء جدول المستخدمين
             cur.execute("""
                 CREATE TABLE users (
                     user_id BIGINT PRIMARY KEY,
@@ -75,27 +65,21 @@ def init_db():
                 )
             """)
             
-            # إنشاء جدول المهام مع العلاقة الصحيحة
             cur.execute("""
                 CREATE TABLE tasks (
                     task_id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
                     name VARCHAR(100) NOT NULL,
                     due_date DATE,
                     description TEXT,
                     completed BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    CONSTRAINT fk_user
-                        FOREIGN KEY(user_id) 
-                        REFERENCES users(user_id)
-                        ON DELETE CASCADE
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
             conn.commit()
             logger.info("تم تهيئة جداول قاعدة البيانات بنجاح")
     except Exception as e:
-        logger.error(f"فشل في تهيئة قاعدة البيانات: {e}", exc_info=True)
+        logger.error(f"فشل في تهيئة قاعدة البيانات: {e}")
         raise
 
 # روابط ثابتة
@@ -104,11 +88,9 @@ WELCOME_IMAGE_URL = "https://github.com/minqx543/minqx/blob/main/src/default_ava
 BOT_LINK = f"https://t.me/{BOT_USERNAME}"
 
 def generate_ref_code(user_id: int) -> str:
-    """إنشاء كود إحالة فريد للمستخدم"""
     return f"REF{user_id % 10000:04d}"
 
-def start(update: Update, context: CallbackContext) -> None:
-    """إرسال رسالة ترحيبية عند استخدام الأمر /start"""
+async def start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     user_id = user.id
     username = user.username or user.first_name
@@ -116,7 +98,6 @@ def start(update: Update, context: CallbackContext) -> None:
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
-            # التحقق من وجود المستخدم أو إنشائه
             cur.execute(
                 "INSERT INTO users (user_id, username, first_name, last_name, ref_code) "
                 "VALUES (%s, %s, %s, %s, %s) "
@@ -124,25 +105,23 @@ def start(update: Update, context: CallbackContext) -> None:
                 (user_id, username, user.first_name, user.last_name, generate_ref_code(user_id))
             )
             
-            # معالجة الإحالة إذا وجدت
             if context.args:
                 referrer_code = context.args[0]
-                if referrer_code != generate_ref_code(user_id):  # منع الإحالة الذاتية
+                if referrer_code != generate_ref_code(user_id):
                     cur.execute(
                         "UPDATE users SET score = score + 10, ref_count = ref_count + 1 "
                         "WHERE ref_code = %s AND user_id != %s RETURNING user_id",
                         (referrer_code, user_id)
                     )
                     if cur.fetchone():
-                        update.message.reply_text("🎉 تمت إحالتك بنجاح! حصلت على 10 نقاط إضافية!")
+                        await update.message.reply_text("🎉 تمت إحالتك بنجاح! حصلت على 10 نقاط إضافية!")
             
             conn.commit()
     except Exception as e:
-        logger.error(f"خطأ في قاعدة البيانات: {e}", exc_info=True)
-        update.message.reply_text("⚠️ حدث خطأ أثناء معالجة طلبك. يرجى المحاولة لاحقاً.")
+        logger.error(f"خطأ في قاعدة البيانات: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء معالجة طلبك. يرجى المحاولة لاحقاً.")
         return
 
-    # رسالة الترحيب
     welcome_message = (
         f"🎊 مرحبًا بك {user.first_name} في @{BOT_USERNAME} 🎊\n"
         f"✨ Welcome {user.first_name} to @{BOT_USERNAME} ✨\n\n"
@@ -165,17 +144,16 @@ def start(update: Update, context: CallbackContext) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
-        update.message.reply_photo(
+        await update.message.reply_photo(
             photo=WELCOME_IMAGE_URL,
             caption=welcome_message,
             reply_markup=reply_markup
         )
     except Exception as e:
         logger.error(f"خطأ في إرسال الصورة الترحيبية: {e}")
-        update.message.reply_text(welcome_message, reply_markup=reply_markup)
+        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
-def show_score(update: Update, context: CallbackContext) -> None:
-    """عرض نقاط المستخدم"""
+async def show_score(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     
     try:
@@ -195,37 +173,33 @@ def show_score(update: Update, context: CallbackContext) -> None:
                     f"🔗 رابط الإحالة الخاص بك:\n{ref_link}\n\n"
                     "كلما أحلت أصدقاء، تحصل على 10 نقاط لكل إحالة!"
                 )
-                update.message.reply_text(message)
+                await update.message.reply_text(message)
             else:
-                update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
+                await update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
     except Exception as e:
-        logger.error(f"خطأ في عرض النقاط: {e}", exc_info=True)
-        update.message.reply_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
+        logger.error(f"خطأ في عرض النقاط: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
 
-def add_task(update: Update, context: CallbackContext) -> int:
-    """بدء عملية إضافة مهمة جديدة"""
-    update.message.reply_text("📝 ما هي المهمة التي تريد إضافتها؟")
+async def add_task(update: Update, context: CallbackContext) -> int:
+    await update.message.reply_text("📝 ما هي المهمة التي تريد إضافتها؟")
     return TASK_NAME
 
-def task_name_handler(update: Update, context: CallbackContext) -> int:
-    """معالجة اسم المهمة"""
+async def task_name_handler(update: Update, context: CallbackContext) -> int:
     context.user_data['task_name'] = update.message.text
-    update.message.reply_text("📅 متى يجب إكمال هذه المهمة؟ (YYYY-MM-DD)")
+    await update.message.reply_text("📅 متى يجب إكمال هذه المهمة؟ (YYYY-MM-DD)")
     return TASK_DUE_DATE
 
-def task_due_date_handler(update: Update, context: CallbackContext) -> int:
-    """معالجة تاريخ إكمال المهمة"""
+async def task_due_date_handler(update: Update, context: CallbackContext) -> int:
     try:
         due_date = datetime.strptime(update.message.text, "%Y-%m-%d").date()
         context.user_data['due_date'] = due_date
-        update.message.reply_text("📄 هل تريد إضافة وصف للمهمة؟ (اختياري)")
+        await update.message.reply_text("📄 هل تريد إضافة وصف للمهمة؟ (اختياري)")
         return TASK_DESCRIPTION
     except ValueError:
-        update.message.reply_text("⚠️ تنسيق التاريخ غير صحيح. يرجى إدخال التاريخ بالصيغة YYYY-MM-DD")
+        await update.message.reply_text("⚠️ تنسيق التاريخ غير صحيح. يرجى إدخال التاريخ بالصيغة YYYY-MM-DD")
         return TASK_DUE_DATE
 
-def task_description_handler(update: Update, context: CallbackContext) -> int:
-    """معالجة وصف المهمة وحفظها في قاعدة البيانات"""
+async def task_description_handler(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     description = update.message.text
     
@@ -242,22 +216,20 @@ def task_description_handler(update: Update, context: CallbackContext) -> int:
             )
             conn.commit()
             
-            update.message.reply_text("✅ تمت إضافة المهمة بنجاح!")
+            await update.message.reply_text("✅ تمت إضافة المهمة بنجاح!")
     except Exception as e:
-        logger.error(f"خطأ في إضافة المهمة: {e}", exc_info=True)
-        update.message.reply_text("⚠️ حدث خطأ أثناء إضافة المهمة. يرجى المحاولة لاحقاً.")
+        logger.error(f"خطأ في إضافة المهمة: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء إضافة المهمة. يرجى المحاولة لاحقاً.")
     
     context.user_data.clear()
     return ConversationHandler.END
 
-def cancel(update: Update, context: CallbackContext) -> int:
-    """إلغاء المحادثة"""
-    update.message.reply_text("تم الإلغاء.")
+async def cancel(update: Update, context: CallbackContext) -> int:
+    await update.message.reply_text("تم الإلغاء.")
     context.user_data.clear()
     return ConversationHandler.END
 
-def list_tasks(update: Update, context: CallbackContext) -> None:
-    """عرض قائمة المهام للمستخدم"""
+async def list_tasks(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     
     try:
@@ -283,63 +255,78 @@ def list_tasks(update: Update, context: CallbackContext) -> None:
                         message += f"وصف: {description}\n"
                     message += "\n"
                 
-                update.message.reply_text(message)
+                await update.message.reply_text(message)
             else:
-                update.message.reply_text("📭 ليس لديك أي مهام حالياً.")
+                await update.message.reply_text("📭 ليس لديك أي مهام حالياً.")
     except Exception as e:
-        logger.error(f"خطأ في عرض المهام: {e}", exc_info=True)
-        update.message.reply_text("⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً.")
+        logger.error(f"خطأ في عرض المهام: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً.")
 
-def main() -> None:
-    """تشغيل البوت"""
+def keep_alive():
+    while True:
+        try:
+            conn = db_manager.get_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            time.sleep(300)
+        except Exception as e:
+            logger.error(f"خطأ في اتصال قاعدة البيانات: {e}")
+            time.sleep(60)
+
+async def post_init(application):
+    threading.Thread(target=keep_alive, daemon=True).start()
+
+def main():
+    # التحقق من المتغيرات البيئية
+    required_env_vars = [
+        'TELEGRAM_BOT_TOKEN',
+        'DB_HOST',
+        'DB_NAME',
+        'DB_USER',
+        'DB_PASSWORD'
+    ]
+    
+    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+    if missing_vars:
+        error_msg = f"المتغيرات البيئية المفقودة: {', '.join(missing_vars)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
     # تهيئة قاعدة البيانات
     init_db()
     
-    # الحصول على توكن البوت
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
-    if not token:
-        raise ValueError("لم يتم تعيين TELEGRAM_BOT_TOKEN في متغيرات البيئة")
-    
-    # إنشاء Updater
-    updater = Updater(token=token)
-    dispatcher = updater.dispatcher
-
-    # تسجيل المعالجات
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("score", show_score))
-    dispatcher.add_handler(CommandHandler("tasks", list_tasks))
-    
-    # معالج المحادثة لإضافة المهام
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('addtask', add_task)],
-        states={
-            TASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_name_handler)],
-            TASK_DUE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_due_date_handler)],
-            TASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_description_handler)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-    )
-    dispatcher.add_handler(conv_handler)
-
-    # بدء البوت في وضع Polling
-    updater.start_polling()
-    logger.info("البوت يعمل في وضع Polling")
-    
-    # إبقاء الخدمة نشطة
-    def keep_alive():
-        while True:
-            try:
-                conn = db_manager.get_connection()
-                with conn.cursor() as cur:
-                    cur.execute("SELECT 1")
-                logger.debug("تم التحقق من اتصال قاعدة البيانات بنجاح")
-            except Exception as e:
-                logger.error(f"خطأ في التحقق من اتصال قاعدة البيانات: {e}")
-            time.sleep(300)
-    
-    threading.Thread(target=keep_alive, daemon=True).start()
-    
-    updater.idle()
+    try:
+        token = os.getenv('TELEGRAM_BOT_TOKEN')
+        logger.info(f"تم الحصول على توكن البوت، الطول: {len(token)} أحرف")
+        
+        application = ApplicationBuilder() \
+            .token(token) \
+            .post_init(post_init) \
+            .build()
+        
+        # إضافة المعالجات
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("score", show_score))
+        application.add_handler(CommandHandler("tasks", list_tasks))
+        
+        # معالج المحادثة
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('addtask', add_task)],
+            states={
+                TASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_name_handler)],
+                TASK_DUE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_due_date_handler)],
+                TASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_description_handler)],
+            },
+            fallbacks=[CommandHandler('cancel', cancel)]
+        )
+        application.add_handler(conv_handler)
+        
+        # بدء البوت
+        application.run_polling()
+        
+    except Exception as e:
+        logger.error(f"خطأ فادح في تشغيل البوت: {e}")
+        raise
 
 if __name__ == '__main__':
     main()
