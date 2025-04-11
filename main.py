@@ -57,9 +57,13 @@ def init_db():
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
-            # إنشاء جدول المستخدمين إذا لم يكن موجوداً
+            # حذف الجداول إذا كانت موجودة (لأغراض التطوير فقط)
+            cur.execute("DROP TABLE IF EXISTS tasks CASCADE")
+            cur.execute("DROP TABLE IF EXISTS users CASCADE")
+            
+            # إنشاء جدول المستخدمين
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS users (
+                CREATE TABLE users (
                     user_id BIGINT PRIMARY KEY,
                     username VARCHAR(100),
                     first_name VARCHAR(100),
@@ -67,20 +71,24 @@ def init_db():
                     score INTEGER DEFAULT 0,
                     ref_code VARCHAR(50) UNIQUE,
                     ref_count INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT NOW()
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
-            # إنشاء جدول المهام إذا لم يكن موجوداً
+            # إنشاء جدول المهام مع العلاقة الصحيحة
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS tasks (
+                CREATE TABLE tasks (
                     task_id SERIAL PRIMARY KEY,
-                    user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                    user_id BIGINT NOT NULL,
                     name VARCHAR(100) NOT NULL,
                     due_date DATE,
                     description TEXT,
                     completed BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT NOW()
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_user
+                        FOREIGN KEY(user_id) 
+                        REFERENCES users(user_id)
+                        ON DELETE CASCADE
                 )
             """)
             
@@ -323,11 +331,11 @@ def main() -> None:
             try:
                 conn = db_manager.get_connection()
                 with conn.cursor() as cur:
-                    cur.execute("SELECT 1")  # اختبار اتصال بسيط
+                    cur.execute("SELECT 1")
                 logger.debug("تم التحقق من اتصال قاعدة البيانات بنجاح")
             except Exception as e:
                 logger.error(f"خطأ في التحقق من اتصال قاعدة البيانات: {e}")
-            time.sleep(300)  # التحقق كل 5 دقائق
+            time.sleep(300)
     
     threading.Thread(target=keep_alive, daemon=True).start()
     
