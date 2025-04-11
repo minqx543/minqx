@@ -160,25 +160,117 @@ async def show_score(update: Update, context: CallbackContext) -> None:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT score, ref_code FROM users WHERE user_id = %s",
+                "SELECT score FROM users WHERE user_id = %s",
                 (user_id,)
             )
             result = cur.fetchone()
             
             if result:
-                score, ref_code = result
-                ref_link = f"https://t.me/{BOT_USERNAME}?start={ref_code}"
-                message = (
-                    f"🎯 نقاطك الحالية: {score}\n\n"
-                    f"🔗 رابط الإحالة الخاص بك:\n{ref_link}\n\n"
-                    "كلما أحلت أصدقاء، تحصل على 10 نقاط لكل إحالة!"
-                )
-                await update.message.reply_text(message)
+                score = result[0]
+                await update.message.reply_text(f"🎯 نقاطك الحالية: {score}")
             else:
                 await update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
     except Exception as e:
         logger.error(f"خطأ في عرض النقاط: {e}")
         await update.message.reply_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
+
+async def list_tasks(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT name, due_date, description, completed "
+                "FROM tasks WHERE user_id = %s ORDER BY due_date",
+                (user_id,)
+            )
+            tasks = cur.fetchall()
+            
+            if tasks:
+                message = "📋 مهامك:\n\n"
+                for task in tasks:
+                    name, due_date, description, completed = task
+                    status = "✅" if completed else "⏳"
+                    message += f"{status} {name} - {due_date}\n"
+                    if description:
+                        message += f"وصف: {description}\n"
+                    message += "\n"
+                
+                await update.message.reply_text(message)
+            else:
+                await update.message.reply_text("📭 ليس لديك أي مهام حالياً.")
+    except Exception as e:
+        logger.error(f"خطأ في عرض المهام: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً.")
+
+async def show_top_players(update: Update, context: CallbackContext) -> None:
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT first_name, score FROM users ORDER BY score DESC LIMIT 10"
+            )
+            top_players = cur.fetchall()
+            
+            if top_players:
+                message = "🏆 أفضل 10 لاعبين حسب النقاط:\n\n"
+                for i, (name, score) in enumerate(top_players, 1):
+                    message += f"{i}. {name} - {score} نقطة\n"
+                
+                await update.message.reply_text(message)
+            else:
+                await update.message.reply_text("⚠️ لا يوجد لاعبين حتى الآن.")
+    except Exception as e:
+        logger.error(f"خطأ في عرض المتصدرين: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً.")
+
+async def show_referral_link(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ref_code FROM users WHERE user_id = %s",
+                (user_id,)
+            )
+            result = cur.fetchone()
+            
+            if result:
+                ref_code = result[0]
+                ref_link = f"https://t.me/{BOT_USERNAME}?start={ref_code}"
+                message = (
+                    f"🔗 رابط الإحالة الخاص بك:\n{ref_link}\n\n"
+                    "شارك هذا الرابط مع أصدقائك واحصل على نقاط عند انضمامهم!"
+                )
+                await update.message.reply_text(message)
+            else:
+                await update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
+    except Exception as e:
+        logger.error(f"خطأ في عرض رابط الإحالة: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
+
+async def show_top_referrals(update: Update, context: CallbackContext) -> None:
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT first_name, ref_count FROM users ORDER BY ref_count DESC LIMIT 10"
+            )
+            top_referrals = cur.fetchall()
+            
+            if top_referrals:
+                message = "🏆 أفضل 10 محيلين حسب عدد الإحالات:\n\n"
+                for i, (name, count) in enumerate(top_referrals, 1):
+                    message += f"{i}. {name} - {count} إحالة\n"
+                
+                await update.message.reply_text(message)
+            else:
+                await update.message.reply_text("⚠️ لا يوجد محيلين حتى الآن.")
+    except Exception as e:
+        logger.error(f"خطأ في عرض أفضل المحيلين: {e}")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً.")
 
 async def add_task(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text("📝 ما هي المهمة التي تريد إضافتها؟")
@@ -229,39 +321,6 @@ async def cancel(update: Update, context: CallbackContext) -> int:
     context.user_data.clear()
     return ConversationHandler.END
 
-async def list_tasks(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
-    
-    try:
-        conn = db_manager.get_connection()
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT task_id, name, due_date, description, completed "
-                "FROM tasks WHERE user_id = %s ORDER BY due_date",
-                (user_id,)
-            )
-            tasks = cur.fetchall()
-            
-            if tasks:
-                message = "📋 مهامك:\n\n"
-                for task in tasks:
-                    task_id, name, due_date, description, completed = task
-                    status = "✅" if completed else "⏳"
-                    message += (
-                        f"{status} {name} - {due_date}\n"
-                        f"ID: {task_id}\n"
-                    )
-                    if description:
-                        message += f"وصف: {description}\n"
-                    message += "\n"
-                
-                await update.message.reply_text(message)
-            else:
-                await update.message.reply_text("📭 ليس لديك أي مهام حالياً.")
-    except Exception as e:
-        logger.error(f"خطأ في عرض المهام: {e}")
-        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً.")
-
 def keep_alive():
     while True:
         try:
@@ -308,6 +367,9 @@ def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("score", show_score))
         application.add_handler(CommandHandler("tasks", list_tasks))
+        application.add_handler(CommandHandler("top", show_top_players))
+        application.add_handler(CommandHandler("referrals", show_referral_link))
+        application.add_handler(CommandHandler("topreferrals", show_top_referrals))
         
         # معالج المحادثة
         conv_handler = ConversationHandler(
