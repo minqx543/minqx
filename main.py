@@ -84,7 +84,7 @@ def init_db():
 
 # روابط ثابتة
 BOT_USERNAME = "MinQX_Bot"
-WELCOME_IMAGE_URL = "https://raw.githubusercontent.com/minqx543/minqx/main/src/default_avatar.jpg.png"  # الرابط المعدل
+WELCOME_IMAGE_URL = "https://github.com/minqx543/minqx/blob/main/src/default_avatar.jpg.png?raw=true"
 BOT_LINK = f"https://t.me/{BOT_USERNAME}"
 
 def generate_ref_code(user_id: int) -> str:
@@ -103,6 +103,7 @@ async def start(update: Update, context: CallbackContext) -> None:
                 "VALUES (%s, %s, %s, %s, %s) "
                 "ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username",
                 (user_id, username, user.first_name, user.last_name, generate_ref_code(user_id))
+            )
             
             if context.args:
                 referrer_code = context.args[0]
@@ -110,9 +111,11 @@ async def start(update: Update, context: CallbackContext) -> None:
                     cur.execute(
                         "UPDATE users SET score = score + 10, ref_count = ref_count + 1 "
                         "WHERE ref_code = %s AND user_id != %s RETURNING user_id",
-                        (referrer_code, user_id))
+                        (referrer_code, user_id)
+                    )
                     if cur.fetchone():
                         await update.message.reply_text("🎉 تمت إحالتك بنجاح! حصلت على 10 نقاط إضافية!")
+            
             conn.commit()
     except Exception as e:
         logger.error(f"خطأ في قاعدة البيانات: {e}")
@@ -144,7 +147,8 @@ async def start(update: Update, context: CallbackContext) -> None:
         await update.message.reply_photo(
             photo=WELCOME_IMAGE_URL,
             caption=welcome_message,
-            reply_markup=reply_markup)
+            reply_markup=reply_markup
+        )
     except Exception as e:
         logger.error(f"خطأ في إرسال الصورة الترحيبية: {e}")
         await update.message.reply_text(welcome_message, reply_markup=reply_markup)
@@ -157,7 +161,8 @@ async def show_score(update: Update, context: CallbackContext) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT score, ref_code FROM users WHERE user_id = %s",
-                (user_id,))
+                (user_id,)
+            )
             result = cur.fetchone()
             
             if result:
@@ -166,7 +171,8 @@ async def show_score(update: Update, context: CallbackContext) -> None:
                 message = (
                     f"🎯 نقاطك الحالية: {score}\n\n"
                     f"🔗 رابط الإحالة الخاص بك:\n{ref_link}\n\n"
-                    "كلما أحلت أصدقاء، تحصل على 10 نقاط لكل إحالة!")
+                    "كلما أحلت أصدقاء، تحصل على 10 نقاط لكل إحالة!"
+                )
                 await update.message.reply_text(message)
             else:
                 await update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
@@ -206,8 +212,10 @@ async def task_description_handler(update: Update, context: CallbackContext) -> 
                 (user_id, 
                  context.user_data['task_name'], 
                  context.user_data['due_date'], 
-                 description))
+                 description)
+            )
             conn.commit()
+            
             await update.message.reply_text("✅ تمت إضافة المهمة بنجاح!")
     except Exception as e:
         logger.error(f"خطأ في إضافة المهمة: {e}")
@@ -230,7 +238,8 @@ async def list_tasks(update: Update, context: CallbackContext) -> None:
             cur.execute(
                 "SELECT task_id, name, due_date, description, completed "
                 "FROM tasks WHERE user_id = %s ORDER BY due_date",
-                (user_id,))
+                (user_id,)
+            )
             tasks = cur.fetchall()
             
             if tasks:
@@ -240,10 +249,12 @@ async def list_tasks(update: Update, context: CallbackContext) -> None:
                     status = "✅" if completed else "⏳"
                     message += (
                         f"{status} {name} - {due_date}\n"
-                        f"ID: {task_id}\n")
+                        f"ID: {task_id}\n"
+                    )
                     if description:
                         message += f"وصف: {description}\n"
                     message += "\n"
+                
                 await update.message.reply_text(message)
             else:
                 await update.message.reply_text("📭 ليس لديك أي مهام حالياً.")
