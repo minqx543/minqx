@@ -1,6 +1,7 @@
 import os
 import logging
 import time
+import threading
 import psycopg2
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
@@ -12,7 +13,7 @@ from telegram.ext import (
     MessageHandler,
     CallbackContext,
     ConversationHandler,
-    Filters
+    filters
 )
 
 # تكوين التسجيل
@@ -292,7 +293,7 @@ def main() -> None:
         raise ValueError("لم يتم تعيين TELEGRAM_BOT_TOKEN في متغيرات البيئة")
     
     # إنشاء Updater
-    updater = Updater(token=token, use_context=True)
+    updater = Updater(token=token)
     dispatcher = updater.dispatcher
 
     # تسجيل المعالجات
@@ -304,9 +305,9 @@ def main() -> None:
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('addtask', add_task)],
         states={
-            TASK_NAME: [MessageHandler(Filters.text & ~Filters.command, task_name_handler)],
-            TASK_DUE_DATE: [MessageHandler(Filters.text & ~Filters.command, task_due_date_handler)],
-            TASK_DESCRIPTION: [MessageHandler(Filters.text & ~Filters.command, task_description_handler)],
+            TASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_name_handler)],
+            TASK_DUE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_due_date_handler)],
+            TASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_description_handler)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
@@ -333,5 +334,4 @@ def main() -> None:
     updater.idle()
 
 if __name__ == '__main__':
-    import threading
     main()
