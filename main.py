@@ -151,27 +151,28 @@ async def start(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("⚠️ حدث خطأ أثناء معالجة طلبك. يرجى المحاولة لاحقاً.")
         return
 
-    welcome_message = (
-        f"🎊 مرحبًا بك {user.first_name} في @{BOT_USERNAME} 🎊\n"
-        f"✨ Welcome {user.first_name} to @{BOT_USERNAME} ✨\n\n"
-        "📌 الأوامر المتاحة / Available Commands:\n"
-        "/start - 🎉 بدء/Start 🎉\n"
-        "/score - 🤑 النقاط/Points 🤑\n"
-        "/tasks - ✅️ المهام/Tasks ✅️\n"
-        "/top - 🥇 المتصدرين/Top Players 🥇\n"
-        "/referrals - 🔥 الإحالات/Referrals 🔥\n"
-        "/topreferrals - 🥇 أفضل المحيلين/Top Referrals 🥇\n"
-        "/social - 📢 منصاتنا الاجتماعية"
-    )
+    welcome_message = f"🎊 مرحبًا بك {user.first_name} في @{BOT_USERNAME} 🎊\n\nاختر ما تريد من الأزرار أدناه:"
     
     keyboard = [
         [
-            InlineKeyboardButton("🚀 بدء الاستخدام", callback_data="get_started"),
-            InlineKeyboardButton("📢 مشاركة البوت", 
-                               url=f"https://t.me/share/url?url={BOT_LINK}&text=انضم%20إلى%20@{BOT_USERNAME}%20للحصول%20على%20مزايا%20رائعة!")
+            InlineKeyboardButton("🎉 بدء التفاعل", callback_data="main_menu"),
+            InlineKeyboardButton("🤑 نقاطي", callback_data="show_score")
         ],
         [
-            InlineKeyboardButton("📢 منصاتنا الاجتماعية", callback_data="social_media")
+            InlineKeyboardButton("✅️ مهامي", callback_data="list_tasks"),
+            InlineKeyboardButton("🥇 المتصدرين", callback_data="top_players")
+        ],
+        [
+            InlineKeyboardButton("🔥 رابط إحالتي", callback_data="referral_link"),
+            InlineKeyboardButton("🏆 أفضل المحيلين", callback_data="top_referrals")
+        ],
+        [
+            InlineKeyboardButton("📢 منصاتنا", callback_data="social_media"),
+            InlineKeyboardButton("➕ إضافة مهمة", callback_data="add_task")
+        ],
+        [
+            InlineKeyboardButton("📢 مشاركة البوت", 
+                               url=f"https://t.me/share/url?url={BOT_LINK}&text=انضم%20إلى%20@{BOT_USERNAME}%20للحصول%20على%20مزايا%20رائعة!")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -180,14 +181,22 @@ async def start(update: Update, context: CallbackContext) -> None:
         await update.message.reply_photo(
             photo=WELCOME_IMAGE_URL,
             caption=welcome_message,
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
         )
     except Exception as e:
         logger.error(f"خطأ في إرسال الصورة الترحيبية: {e}")
         await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
-async def show_score(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
+async def main_menu(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    await start(update, context)
+
+async def show_score_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
     
     try:
         conn = db_manager.get_connection()
@@ -200,15 +209,24 @@ async def show_score(update: Update, context: CallbackContext) -> None:
             
             if result:
                 score = result[0]
-                await update.message.reply_text(f"🎯 نقاطك الحالية: {score}")
+                message = f"🪙 نقاطك الحالية: {score}"
+                keyboard = [
+                    [InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")]
+                ]
+                await query.edit_message_text(
+                    text=message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
             else:
-                await update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
+                await query.edit_message_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
     except Exception as e:
         logger.error(f"خطأ في عرض النقاط: {e}")
-        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
+        await query.edit_message_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
 
-async def list_tasks(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
+async def list_tasks_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
     
     try:
         conn = db_manager.get_connection()
@@ -230,14 +248,31 @@ async def list_tasks(update: Update, context: CallbackContext) -> None:
                         message += f"وصف: {description}\n"
                     message += "\n"
                 
-                await update.message.reply_text(message)
+                keyboard = [
+                    [InlineKeyboardButton("➕ إضافة مهمة", callback_data="add_task")],
+                    [InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")]
+                ]
+                await query.edit_message_text(
+                    text=message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
             else:
-                await update.message.reply_text("📭 ليس لديك أي مهام حالياً.")
+                keyboard = [
+                    [InlineKeyboardButton("➕ إضافة مهمة", callback_data="add_task")],
+                    [InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")]
+                ]
+                await query.edit_message_text(
+                    text="📭 ليس لديك أي مهام حالياً.",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
     except Exception as e:
         logger.error(f"خطأ في عرض المهام: {e}")
-        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً.")
+        await query.edit_message_text("⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً.")
 
-async def show_top_players(update: Update, context: CallbackContext) -> None:
+async def top_players_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
@@ -251,15 +286,22 @@ async def show_top_players(update: Update, context: CallbackContext) -> None:
                 for i, (name, score) in enumerate(top_players, 1):
                     message += f"{i}. {name} - {score} نقطة\n"
                 
-                await update.message.reply_text(message)
+                keyboard = [
+                    [InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")]
+                ]
+                await query.edit_message_text(
+                    text=message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
             else:
-                await update.message.reply_text("⚠️ لا يوجد لاعبين حتى الآن.")
+                await query.edit_message_text("⚠️ لا يوجد لاعبين حتى الآن.")
     except Exception as e:
         logger.error(f"خطأ في عرض المتصدرين: {e}")
-        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً.")
+        await query.edit_message_text("⚠️ حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً.")
 
-async def show_referral_link(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
+async def referral_link_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
     
     try:
         conn = db_manager.get_connection()
@@ -277,14 +319,23 @@ async def show_referral_link(update: Update, context: CallbackContext) -> None:
                     f"🔗 رابط الإحالة الخاص بك:\n{ref_link}\n\n"
                     "شارك هذا الرابط مع أصدقائك واحصل على نقاط عند انضمامهم!"
                 )
-                await update.message.reply_text(message)
+                keyboard = [
+                    [InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")]
+                ]
+                await query.edit_message_text(
+                    text=message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
             else:
-                await update.message.reply_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
+                await query.edit_message_text("⚠️ لم يتم العثور على حسابك. يرجى استخدام /start أولاً.")
     except Exception as e:
         logger.error(f"خطأ في عرض رابط الإحالة: {e}")
-        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
+        await query.edit_message_text("⚠️ حدث خطأ أثناء جلب بياناتك. يرجى المحاولة لاحقاً.")
 
-async def show_top_referrals(update: Update, context: CallbackContext) -> None:
+async def top_referrals_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
@@ -298,15 +349,22 @@ async def show_top_referrals(update: Update, context: CallbackContext) -> None:
                 for i, (name, count) in enumerate(top_referrals, 1):
                     message += f"{i}. {name} - {count} إحالة\n"
                 
-                await update.message.reply_text(message)
+                keyboard = [
+                    [InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")]
+                ]
+                await query.edit_message_text(
+                    text=message,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
             else:
-                await update.message.reply_text("⚠️ لا يوجد محيلين حتى الآن.")
+                await query.edit_message_text("⚠️ لا يوجد محيلين حتى الآن.")
     except Exception as e:
         logger.error(f"خطأ في عرض أفضل المحيلين: {e}")
-        await update.message.reply_text("⚠️ حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً.")
+        await query.edit_message_text("⚠️ حدث خطأ أثناء جلب البيانات. يرجى المحاولة لاحقاً.")
 
-async def show_social_media(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
+async def show_social_media_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
     message = "📢 تابعنا على منصاتنا الاجتماعية واحصل على 10 نقاط لكل متابعة:\n\n"
     
     keyboard = []
@@ -317,14 +375,18 @@ async def show_social_media(update: Update, context: CallbackContext) -> None:
             url=data['url']
         )])
     
-    # زر لتأكيد المتابعة
-    keyboard.append([InlineKeyboardButton(
-        "✅ تأكيد المتابعة",
-        callback_data="confirm_follow"
-    )])
+    keyboard.append([InlineKeyboardButton("✅ تأكيد المتابعة", callback_data="confirm_follow")])
+    keyboard.append([InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")])
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(message, reply_markup=reply_markup)
+    await query.edit_message_text(
+        text=message,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+        
+async def add_task_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("📝 ما هي المهمة التي تريد إضافتها؟")
+    return TASK_NAME
 
 async def handle_follow_confirmation(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -343,7 +405,9 @@ async def handle_follow_confirmation(update: Update, context: CallbackContext) -
                 await query.answer("🎉 تم منحك 10 نقاط لمتابعتك لنا! شكراً لك!")
                 await query.edit_message_text(
                     text=query.message.text + "\n\n✅ تم تأكيد متابعتك وحصولك على 10 نقاط!",
-                    reply_markup=None
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")]
+                    ])
                 )
         except Exception as e:
             logger.error(f"خطأ في تحديث النقاط: {e}")
@@ -442,17 +506,22 @@ def main():
         
         # إضافة المعالجات
         application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("score", show_score))
-        application.add_handler(CommandHandler("tasks", list_tasks))
-        application.add_handler(CommandHandler("top", show_top_players))
-        application.add_handler(CommandHandler("referrals", show_referral_link))
-        application.add_handler(CommandHandler("topreferrals", show_top_referrals))
-        application.add_handler(CommandHandler("social", show_social_media))
+        application.add_handler(CallbackQueryHandler(main_menu, pattern="^main_menu$"))
+        application.add_handler(CallbackQueryHandler(show_score_button, pattern="^show_score$"))
+        application.add_handler(CallbackQueryHandler(list_tasks_button, pattern="^list_tasks$"))
+        application.add_handler(CallbackQueryHandler(top_players_button, pattern="^top_players$"))
+        application.add_handler(CallbackQueryHandler(referral_link_button, pattern="^referral_link$"))
+        application.add_handler(CallbackQueryHandler(top_referrals_button, pattern="^top_referrals$"))
+        application.add_handler(CallbackQueryHandler(show_social_media_button, pattern="^social_media$"))
+        application.add_handler(CallbackQueryHandler(add_task_button, pattern="^add_task$"))
         application.add_handler(CallbackQueryHandler(handle_follow_confirmation, pattern="^confirm_follow$"))
         
         # معالج المحادثة
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('addtask', add_task)],
+            entry_points=[
+                CommandHandler('addtask', add_task),
+                CallbackQueryHandler(add_task_button, pattern="^add_task$")
+            ],
             states={
                 TASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_name_handler)],
                 TASK_DUE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_due_date_handler)],
