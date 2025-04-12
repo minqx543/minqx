@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # حالات المحادثة
-TASK_TYPE, TASK_DETAILS, TASK_CONFIRMATION = range(3)
+TASK_TYPE, TASK_DETAILS = range(2)
 
 class DatabaseManager:
     def __init__(self):
@@ -391,6 +391,29 @@ async def cancel(update: Update, context: CallbackContext) -> int:
     
     context.user_data.clear()
     return ConversationHandler.END
+
+async def handle_main_menu(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    if data == "show_score":
+        await show_score(update, context)
+    elif data == "list_tasks":
+        await list_tasks(update, context)
+    elif data == "top_players":
+        await show_top_players(update, context)
+    elif data == "referral_link":
+        await show_referral_link(update, context)
+    elif data == "top_referrals":
+        await show_top_referrals(update, context)
+    elif data == "social_media":
+        await show_social_media(update, context)
+    elif data == "main_menu":
+        await start(update, context)
+    elif data == "add_task":
+        await add_task(update, context)
 
 def keep_alive():
     while True:
