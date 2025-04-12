@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # حالات المحادثة
-TASK_NAME, TASK_DUE_DATE, TASK_DESCRIPTION = range(3)
+TASK_NAME, TASK_VIDEO_CODE = range(2)
 
 class DatabaseManager:
     def __init__(self):
@@ -50,9 +50,9 @@ def init_db():
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS video_tasks CASCADE")
             cur.execute("DROP TABLE IF EXISTS tasks CASCADE")
             cur.execute("DROP TABLE IF EXISTS users CASCADE")
-            cur.execute("DROP TABLE IF EXISTS social_media_points CASCADE")
             
             cur.execute("""
                 CREATE TABLE users (
@@ -72,7 +72,6 @@ def init_db():
                     task_id SERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
                     name VARCHAR(100) NOT NULL,
-                    due_date DATE,
                     description TEXT,
                     completed BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -80,13 +79,13 @@ def init_db():
             """)
             
             cur.execute("""
-                CREATE TABLE social_media_points (
-                    id SERIAL PRIMARY KEY,
+                CREATE TABLE video_tasks (
+                    task_id SERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-                    platform VARCHAR(50) NOT NULL,
+                    video_code VARCHAR(50) NOT NULL,
                     points_granted INTEGER DEFAULT 10,
-                    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(user_id, platform)
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, video_code)
                 )
             """)
             
@@ -277,45 +276,53 @@ async def list_tasks(update: Update, context: CallbackContext) -> None:
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
+            # عرض المهام العادية
             cur.execute(
-                "SELECT name, due_date, description, completed "
-                "FROM tasks WHERE user_id = %s ORDER BY due_date",
+                "SELECT name, description, completed "
+                "FROM tasks WHERE user_id = %s ORDER BY created_at",
                 (user_id,)
             )
             tasks = cur.fetchall()
             
+            # عرض مهام الفيديو
+            cur.execute(
+                "SELECT video_code, created_at "
+                "FROM video_tasks WHERE user_id = %s ORDER BY created_at",
+                (user_id,)
+            )
+            video_tasks = cur.fetchall()
+            
+            message = "📋 مهامك:\n\n"
+            
             if tasks:
-                message = "📋 مهامك:\n\n"
+                message += "🔹 المهام العادية:\n"
                 for task in tasks:
-                    name, due_date, description, completed = task
+                    name, description, completed = task
                     status = "✅" if completed else "⏳"
-                    message += f"{status} {name} - {due_date}\n"
+                    message += f"{status} {name}\n"
                     if description:
                         message += f"وصف: {description}\n"
                     message += "\n"
+            
+            if video_tasks:
+                message += "🎥 مهام الفيديو:\n"
+                for task in video_tasks:
+                    video_code, created_at = task
+                    message += f"✅ {video_code} - {created_at.date()}\n"
                 
-                if query:
-                    await query.edit_message_text(
-                        text=message,
-                        reply_markup=create_back_button()
-                    )
-                else:
-                    await update.message.reply_text(
-                        text=message,
-                        reply_markup=create_back_button()
-                    )
-            else:
-                response = "📭 ليس لديك أي مهام حالياً."
-                if query:
-                    await query.edit_message_text(
-                        text=response,
-                        reply_markup=create_back_button()
-                    )
-                else:
-                    await update.message.reply_text(
-                        text=response,
-                        reply_markup=create_back_button()
-                    )
+            if not tasks and not video_tasks:
+                message = "📭 ليس لديك أي مهام حالياً."
+                
+        if query:
+            await query.edit_message_text(
+                text=message,
+                reply_markup=create_back_button()
+            )
+        else:
+            await update.message.reply_text(
+                text=message,
+                reply_markup=create_back_button()
+            )
     except Exception as e:
         logger.error(f"خطأ في عرض المهام: {e}")
         response = "⚠️ حدث خطأ أثناء جلب المهام. يرجى المحاولة لاحقاً."
@@ -483,7 +490,7 @@ async def show_social_media(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     user_id = query.from_user.id if query else update.effective_user.id
     
-    message = "📢 تابعنا على منصاتنا الاجتماعية واحصل على 10 نقاط لكل متابعة:\n\n"
+    message = "📢 تابعنا على منصاتنا الاجتماعية:\n\n"
     
     keyboard = []
     for platform, data in SOCIAL_MEDIA_LINKS.items():
@@ -531,15 +538,6 @@ async def handle_follow_confirmation(update: Update, context: CallbackContext) -
                     "UPDATE users SET score = score + 10 WHERE user_id = %s",
                     (user_id,)
                 )
-                
-                # تسجيل النقاط في جدول social_media_points
-                cur.execute(
-                    "INSERT INTO social_media_points (user_id, platform) "
-                    "VALUES (%s, %s) "
-                    "ON CONFLICT (user_id, platform) DO NOTHING",
-                    (user_id, "all_platforms")
-                )
-                
                 conn.commit()
                 
                 await query.answer("🎉 تم منحك 10 نقاط لمتابعتك لنا! شكراً لك!")
@@ -578,62 +576,72 @@ async def add_task(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("📝 ما هي المهمة التي تريد إضافتها؟")
+        await query.edit_message_text("📝 ما هي المهمة التي تريد إضافتها؟ (مثال: شاهد الفيديو)")
     else:
-        await update.message.reply_text("📝 ما هي المهمة التي تريد إضافتها؟")
+        await update.message.reply_text("📝 ما هي المهمة التي تريد إضافتها؟ (مثال: شاهد الفيديو)")
     return TASK_NAME
 
 async def task_name_handler(update: Update, context: CallbackContext) -> int:
     context.user_data['task_name'] = update.message.text
-    await update.message.reply_text("📅 متى يجب إكمال هذه المهمة؟ (YYYY-MM-DD)")
-    return TASK_DUE_DATE
-
-async def task_due_date_handler(update: Update, context: CallbackContext) -> int:
-    try:
-        due_date = datetime.strptime(update.message.text, "%Y-%m-%d").date()
-        if due_date < datetime.now().date():
-            await update.message.reply_text("⚠️ لا يمكن إضافة مهمة بتاريخ ماضي!")
-            return TASK_DUE_DATE
-        context.user_data['due_date'] = due_date
-        await update.message.reply_text("📄 هل تريد إضافة وصف للمهمة؟ (اختياري)")
-        return TASK_DESCRIPTION
-    except ValueError:
-        await update.message.reply_text("⚠️ تنسيق التاريخ غير صحيح. يرجى إدخال التاريخ بالصيغة YYYY-MM-DD")
-        return TASK_DUE_DATE
-
-async def task_description_handler(update: Update, context: CallbackContext) -> int:
-    user_id = update.effective_user.id
-    description = update.message.text
     
+    if "فيديو" in context.user_data['task_name'].lower():
+        await update.message.reply_text(
+            "🎥 الرجاء إدخال كود الفيديو بعد مشاهدته:\n"
+            "(سيتم منحك 10 نقاط بعد تأكيد الكود)"
+        )
+        return TASK_VIDEO_CODE
+    else:
+        await update.message.reply_text(
+            "📄 هل تريد إضافة وصف للمهمة؟ (اختياري)"
+        )
+        # هنا يمكنك إضافة منطق للمهام العادية إذا لزم الأمر
+        return ConversationHandler.END
+
+async def task_video_code_handler(update: Update, context: CallbackContext) -> int:
+    user_id = update.effective_user.id
+    video_code = update.message.text.upper().strip()
+
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
-            # إضافة المهمة
+            # تخزين مهمة الفيديو
             cur.execute(
-                "INSERT INTO tasks (user_id, name, due_date, description) "
-                "VALUES (%s, %s, %s, %s)",
-                (user_id, 
-                 context.user_data['task_name'], 
-                 context.user_data['due_date'], 
-                 description)
+                "INSERT INTO video_tasks (user_id, video_code) "
+                "VALUES (%s, %s) "
+                "ON CONFLICT (user_id, video_code) DO NOTHING",
+                (user_id, video_code)
             )
             
-            # منح 10 نقاط لإضافة المهمة
-            cur.execute(
-                "UPDATE users SET score = score + 10 WHERE user_id = %s",
-                (user_id,)
-            )
-            
-            conn.commit()
-            
-            await update.message.reply_text(
-                "✅ تمت إضافة المهمة بنجاح وحصلت على 10 نقاط!",
-                reply_markup=create_back_button()
-            )
+            if cur.rowcount > 0:  # إذا تم إدخال الكود بنجاح (غير مكرر)
+                # منح النقاط
+                cur.execute(
+                    "UPDATE users SET score = score + 10 WHERE user_id = %s",
+                    (user_id,)
+                )
+                
+                # تخزين المهمة في جدول المهام العادية
+                cur.execute(
+                    "INSERT INTO tasks (user_id, name, completed) "
+                    "VALUES (%s, %s, TRUE)",
+                    (user_id, f"مشاهدة فيديو - كود: {video_code}")
+                )
+                
+                conn.commit()
+                
+                await update.message.reply_text(
+                    "✅ تم تسجيل كود الفيديو بنجاح وحصلت على 10 نقاط!",
+                    reply_markup=create_back_button()
+                )
+            else:
+                await update.message.reply_text(
+                    "⚠️ هذا الكود مسجل مسبقاً! لم يتم منح نقاط.",
+                    reply_markup=create_back_button()
+                )
+                
     except Exception as e:
-        logger.error(f"خطأ في إضافة المهمة: {e}")
+        logger.error(f"خطأ في تسجيل كود الفيديو: {e}")
         await update.message.reply_text(
-            "⚠️ حدث خطأ أثناء إضافة المهمة. يرجى المحاولة لاحقاً.",
+            "⚠️ حدث خطأ أثناء معالجة الكود. يرجى المحاولة لاحقاً.",
             reply_markup=create_back_button()
         )
     
@@ -692,7 +700,7 @@ def main():
         application.add_handler(CallbackQueryHandler(handle_main_menu))
         application.add_handler(CallbackQueryHandler(handle_follow_confirmation, pattern="^confirm_follow$"))
         
-        # معالج المحادثة
+        # معالج المحادثة لإضافة المهام
         conv_handler = ConversationHandler(
             entry_points=[
                 CommandHandler('addtask', add_task),
@@ -700,8 +708,7 @@ def main():
             ],
             states={
                 TASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_name_handler)],
-                TASK_DUE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_due_date_handler)],
-                TASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_description_handler)],
+                TASK_VIDEO_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, task_video_code_handler)],
             },
             fallbacks=[CommandHandler('cancel', cancel)]
         )
