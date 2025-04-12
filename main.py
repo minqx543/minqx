@@ -52,6 +52,7 @@ def init_db():
         with conn.cursor() as cur:
             cur.execute("DROP TABLE IF EXISTS tasks CASCADE")
             cur.execute("DROP TABLE IF EXISTS users CASCADE")
+            cur.execute("DROP TABLE IF EXISTS social_media_points CASCADE")
             
             cur.execute("""
                 CREATE TABLE users (
@@ -77,6 +78,18 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            cur.execute("""
+                CREATE TABLE social_media_points (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    platform VARCHAR(50) NOT NULL,
+                    points_granted INTEGER DEFAULT 10,
+                    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, platform)
+                )
+            """)
+            
             conn.commit()
             logger.info("تم تهيئة جداول قاعدة البيانات بنجاح")
     except Exception as e:
@@ -381,7 +394,7 @@ async def show_referral_link(update: Update, context: CallbackContext) -> None:
                 ref_link = f"https://t.me/{BOT_USERNAME}?start={ref_code}"
                 message = (
                     f"🔗 رابط الإحالة الخاص بك:\n{ref_link}\n\n"
-                    "شارك هذا الرابط مع أصدقائك واحصل على نقاط عند انضمامهم!"
+                    "شارك هذا الرابط مع أصدقائك واحصل على 10 نقاط لكل صديق ينضم!"
                 )
                 
                 if query:
@@ -470,7 +483,7 @@ async def show_social_media(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     user_id = query.from_user.id if query else update.effective_user.id
     
-    message = "📢 تابعنا على منصاتنا الاجتماعية واحصل على 10 نق��ط لكل متابعة:\n\n"
+    message = "📢 تابعنا على منصاتنا الاجتماعية واحصل على 10 نقاط لكل متابعة:\n\n"
     
     keyboard = []
     for platform, data in SOCIAL_MEDIA_LINKS.items():
@@ -513,10 +526,20 @@ async def handle_follow_confirmation(update: Update, context: CallbackContext) -
         try:
             conn = db_manager.get_connection()
             with conn.cursor() as cur:
+                # منح 10 نقاط للمستخدم
                 cur.execute(
                     "UPDATE users SET score = score + 10 WHERE user_id = %s",
                     (user_id,)
                 )
+                
+                # تسجيل النقاط في جدول social_media_points
+                cur.execute(
+                    "INSERT INTO social_media_points (user_id, platform) "
+                    "VALUES (%s, %s) "
+                    "ON CONFLICT (user_id, platform) DO NOTHING",
+                    (user_id, "all_platforms")
+                )
+                
                 conn.commit()
                 
                 await query.answer("🎉 تم منحك 10 نقاط لمتابعتك لنا! شكراً لك!")
@@ -568,6 +591,9 @@ async def task_name_handler(update: Update, context: CallbackContext) -> int:
 async def task_due_date_handler(update: Update, context: CallbackContext) -> int:
     try:
         due_date = datetime.strptime(update.message.text, "%Y-%m-%d").date()
+        if due_date < datetime.now().date():
+            await update.message.reply_text("⚠️ لا يمكن إضافة مهمة بتاريخ ماضي!")
+            return TASK_DUE_DATE
         context.user_data['due_date'] = due_date
         await update.message.reply_text("📄 هل تريد إضافة وصف للمهمة؟ (اختياري)")
         return TASK_DESCRIPTION
@@ -582,6 +608,7 @@ async def task_description_handler(update: Update, context: CallbackContext) -> 
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
+            # إضافة المهمة
             cur.execute(
                 "INSERT INTO tasks (user_id, name, due_date, description) "
                 "VALUES (%s, %s, %s, %s)",
@@ -590,12 +617,25 @@ async def task_description_handler(update: Update, context: CallbackContext) -> 
                  context.user_data['due_date'], 
                  description)
             )
+            
+            # منح 10 نقاط لإضافة المهمة
+            cur.execute(
+                "UPDATE users SET score = score + 10 WHERE user_id = %s",
+                (user_id,)
+            )
+            
             conn.commit()
             
-            await update.message.reply_text("✅ تمت إضافة المهمة بنجاح!", reply_markup=create_back_button())
+            await update.message.reply_text(
+                "✅ تمت إضافة المهمة بنجاح وحصلت على 10 نقاط!",
+                reply_markup=create_back_button()
+            )
     except Exception as e:
         logger.error(f"خطأ في إضافة المهمة: {e}")
-        await update.message.reply_text("⚠️ حدث خطأ أثناء إضافة المهمة. يرجى المحاولة لاحقاً.", reply_markup=create_back_button())
+        await update.message.reply_text(
+            "⚠️ حدث خطأ أثناء إضافة المهمة. يرجى المحاولة لاحقاً.",
+            reply_markup=create_back_button()
+        )
     
     context.user_data.clear()
     return ConversationHandler.END
