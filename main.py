@@ -276,7 +276,6 @@ async def list_tasks(update: Update, context: CallbackContext) -> None:
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
-            # عرض المهام العادية
             cur.execute(
                 "SELECT name, description, completed "
                 "FROM tasks WHERE user_id = %s ORDER BY created_at",
@@ -284,7 +283,6 @@ async def list_tasks(update: Update, context: CallbackContext) -> None:
             )
             tasks = cur.fetchall()
             
-            # عرض مهام الفيديو
             cur.execute(
                 "SELECT video_code, created_at "
                 "FROM video_tasks WHERE user_id = %s ORDER BY created_at",
@@ -497,16 +495,10 @@ async def show_social_media(update: Update, context: CallbackContext) -> None:
         message += f"{data['icon']} {platform}: {data['url']}\n"
         keyboard.append([InlineKeyboardButton(
             f"{data['icon']} {platform}",
-            url=data['url']
+            url=data['url'],
+            callback_data=f"social_{platform.lower()}"
         )])
     
-    # زر لتأكيد المتابعة
-    keyboard.append([InlineKeyboardButton(
-        "✅ تأكيد المتابعة",
-        callback_data="confirm_follow"
-    )])
-    
-    # زر الرجوع
     keyboard.append([InlineKeyboardButton(
         "🔙 الرجوع إلى القائمة الرئيسية",
         callback_data="main_menu"
@@ -525,29 +517,55 @@ async def show_social_media(update: Update, context: CallbackContext) -> None:
             reply_markup=reply_markup
         )
 
-async def handle_follow_confirmation(update: Update, context: CallbackContext) -> None:
+async def handle_social_media_click(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     user_id = query.from_user.id
+    platform = query.data.replace("social_", "")
     
-    if query.data == "confirm_follow":
+    await query.answer(f"جارٍ تحويلك إلى {platform}...")
+    
+    # بدء المؤقت لمدة 20 ثانية
+    context.job_queue.run_once(
+        callback=grant_points_after_delay,
+        when=20,
+        data={'user_id': user_id, 'platform': platform},
+        name=f"{user_id}_{platform}"
+    )
+    
+    await query.edit_message_text(
+        text=f"⏳ بعد مشاهدة المحتوى على {platform}، سيتم منحك 10 نقاط خلال 20 ثانية",
+        reply_markup=create_back_button()
+    )
+
+async def grant_points_after_delay(context: CallbackContext) -> None:
+    job = context.job
+    user_id = job.data['user_id']
+    platform = job.data['platform']
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            # منح النقاط
+            cur.execute(
+                "UPDATE users SET score = score + 10 WHERE user_id = %s",
+                (user_id,)
+            )
+            conn.commit()
+            
+            # إعلام المستخدم
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"🎉 تم منحك 10 نقاط لمشاهدة محتوى {platform}!"
+            )
+    except Exception as e:
+        logger.error(f"خطأ في منح النقاط: {e}")
         try:
-            conn = db_manager.get_connection()
-            with conn.cursor() as cur:
-                # منح 10 نقاط للمستخدم
-                cur.execute(
-                    "UPDATE users SET score = score + 10 WHERE user_id = %s",
-                    (user_id,)
-                )
-                conn.commit()
-                
-                await query.answer("🎉 تم منحك 10 نقاط لمتابعتك لنا! شكراً لك!")
-                await query.edit_message_text(
-                    text=query.message.text + "\n\n✅ تم تأكيد متابعتك وحصولك على 10 نقاط!",
-                    reply_markup=create_back_button()
-                )
-        except Exception as e:
-            logger.error(f"خطأ في تحديث النقاط: {e}")
-            await query.answer("⚠️ حدث خطأ أثناء تحديث نقاطك. يرجى المحاولة لاحقاً.")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="⚠️ حدث خطأ أثناء منح النقاط. يرجى المحاولة لاحقاً."
+            )
+        except:
+            pass
 
 async def handle_main_menu(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -571,6 +589,8 @@ async def handle_main_menu(update: Update, context: CallbackContext) -> None:
         await start(update, context)
     elif data == "add_task":
         await add_task(update, context)
+    elif data.startswith("social_"):
+        await handle_social_media_click(update, context)
 
 async def add_task(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -594,7 +614,6 @@ async def task_name_handler(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text(
             "📄 هل تريد إضافة وصف للمهمة؟ (اختياري)"
         )
-        # هنا يمكنك إضافة منطق للمهام العادية إذا لزم الأمر
         return ConversationHandler.END
 
 async def task_video_code_handler(update: Update, context: CallbackContext) -> int:
@@ -698,7 +717,6 @@ def main():
         # إضافة المعالجات
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CallbackQueryHandler(handle_main_menu))
-        application.add_handler(CallbackQueryHandler(handle_follow_confirmation, pattern="^confirm_follow$"))
         
         # معالج المحادثة لإضافة المهام
         conv_handler = ConversationHandler(
