@@ -180,6 +180,7 @@ async def start(update: Update, context: CallbackContext) -> None:
                 "VALUES (%s, %s, %s, %s, %s) "
                 "ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username",
                 (user_id, username, user.first_name, user.last_name, generate_ref_code(user_id))
+            )
             
             if context.args:
                 referrer_code = context.args[0]
@@ -318,12 +319,12 @@ async def show_social_media(update: Update, context: CallbackContext) -> None:
                     message += f"{data['icon']} {platform}: {data['url']} (تم المكافأة ✅)\n"
                     keyboard.append([InlineKeyboardButton(
                         f"{data['icon']} {platform} (مكتمل)",
-                        url=data['url']))
+                        url=data['url'])])
                 else:
                     message += f"{data['icon']} {platform}: {data['url']} (10 نقاط)\n"
                     keyboard.append([InlineKeyboardButton(
                         f"{data['icon']} {platform} (احصل على 10 نقاط)",
-                        url=data['url']))
+                        url=data['url'])])
             
             keyboard.append([InlineKeyboardButton(
                 "✅ تأكيد المتابعة والحصول على النقاط",
@@ -408,9 +409,6 @@ async def handle_main_menu(update: Update, context: CallbackContext) -> None:
         await add_task(update, context)
     elif data == "complete_task":
         await complete_task_start(update, context)
-
-# باقي الدوال (add_task, task_name_handler, task_due_date_handler, task_description_handler) 
-# تبقى كما هي بدون تغيير
 
 def main():
     required_env_vars = ['TELEGRAM_BOT_TOKEN', 'DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']
