@@ -93,23 +93,36 @@ TASK_TYPES = {
     "watch_video": {
         "name": "شاهد الفيديو",
         "description": "شاهد الفيديو كاملاً وأدخل الكود الظاهر في نهايته",
-        "input_prompt": "🎥 الرجاء إدخال كود الفيديو:"
+        "input_prompt": "🎥 الرجاء إدخال كود الفيديو:",
+        "points": 10
     },
     "watch_video_comment": {
         "name": "شاهد الفيديو وأضف تعليق",
         "description": "شاهد الفيديو كاملاً وأدخل التعليق الذي أضفته",
-        "input_prompt": "💬 الرجاء إدخال نص التعليق الذي أضفته:"
+        "input_prompt": "💬 الرجاء إدخال نص التعليق الذي أضفته:",
+        "points": 15
     },
     "watch_tweet": {
         "name": "شاهد التغريدة",
         "description": "شاهد التغريدة كاملة وأدخل رابط التغريدة",
-        "input_prompt": "🐦 الرجاء إدخال رابط التغريدة:"
+        "input_prompt": "🐦 الرجاء إدخال رابط التغريدة:",
+        "points": 8
     },
     "follow_account": {
         "name": "تابع الحساب",
         "description": "تابع الحساب المطلوب وأدخل اسم المستخدم",
-        "input_prompt": "👤 الرجاء إدخال اسم المستخدم الذي تابعته:"
+        "input_prompt": "👤 الرجاء إدخال اسم المستخدم الذي تابعته:",
+        "points": 20
     }
+}
+
+# روابط المنصات الاجتماعية
+SOCIAL_MEDIA = {
+    "تويتر 🐦": "https://twitter.com/YourPage",
+    "إنستجرام 📸": "https://instagram.com/YourPage",
+    "تيليجرام 📢": "https://t.me/YourChannel",
+    "يوتيوب ▶️": "https://youtube.com/YourChannel",
+    "تيك توك 🎵": "https://tiktok.com/@YourPage"
 }
 
 def generate_ref_code(user_id: int) -> str:
@@ -151,11 +164,18 @@ def create_task_types_keyboard():
     for task_id, task_data in TASK_TYPES.items():
         keyboard.append([
             InlineKeyboardButton(
-                f"{task_data['name']} - 10 نقاط",
+                f"{task_data['name']} - {task_data['points']} نقاط",
                 callback_data=f"tasktype_{task_id}"
             )
         ])
     keyboard.append([InlineKeyboardButton("🔙 إلغاء", callback_data="cancel")])
+    return InlineKeyboardMarkup(keyboard)
+
+def create_social_media_keyboard():
+    keyboard = []
+    for platform, url in SOCIAL_MEDIA.items():
+        keyboard.append([InlineKeyboardButton(platform, url=url)])
+    keyboard.append([InlineKeyboardButton("🔙 الرجوع", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 async def start(update: Update, context: CallbackContext) -> None:
@@ -311,6 +331,18 @@ async def list_tasks(update: Update, context: CallbackContext) -> None:
         else:
             await update.message.reply_text(response, reply_markup=create_back_button())
 
+async def show_social_media(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    message = "🌍 **منصاتنا الاجتماعية**\n\nيمكنك متابعتنا على المنصات التالية:"
+    reply_markup = create_social_media_keyboard()
+    
+    await query.edit_message_text(
+        text=message,
+        reply_markup=reply_markup
+    )
+
 async def add_task(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     if query:
@@ -347,27 +379,28 @@ async def task_details_handler(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     task_details = update.message.text
     task_type = context.user_data['task_type']
+    points = TASK_TYPES.get(task_type, {}).get('points', 10)
     
     try:
         conn = db_manager.get_connection()
         with conn.cursor() as cur:
             # إضافة المهمة
             cur.execute(
-                "INSERT INTO tasks (user_id, task_type, details) VALUES (%s, %s, %s)",
-                (user_id, task_type, task_details)
+                "INSERT INTO tasks (user_id, task_type, details, points_granted) VALUES (%s, %s, %s, %s)",
+                (user_id, task_type, task_details, points)
             )
             
             # منح النقاط
             cur.execute(
-                "UPDATE users SET score = score + 10 WHERE user_id = %s",
-                (user_id,)
+                "UPDATE users SET score = score + %s WHERE user_id = %s",
+                (points, user_id)
             )
             
             conn.commit()
             
             task_name = TASK_TYPES.get(task_type, {}).get('name', task_type)
             await update.message.reply_text(
-                f"✅ تم تسجيل مهمة {task_name} بنجاح وحصلت على 10 نقاط!\n"
+                f"✅ تم تسجيل مهمة {task_name} بنجاح وحصلت على {points} نقاط!\n"
                 f"التفاصيل: {task_details}",
                 reply_markup=create_back_button()
             )
@@ -414,6 +447,108 @@ async def handle_main_menu(update: Update, context: CallbackContext) -> None:
         await start(update, context)
     elif data == "add_task":
         await add_task(update, context)
+
+async def show_top_players(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT username, score 
+                FROM users 
+                ORDER BY score DESC 
+                LIMIT 10
+            """)
+            top_players = cur.fetchall()
+            
+            if top_players:
+                message = "🏆 أفضل 10 لاعبين:\n\n"
+                for i, (username, score) in enumerate(top_players, 1):
+                    message += f"{i}. @{username} - {score} نقطة\n"
+            else:
+                message = "لا يوجد لاعبين مسجلين بعد."
+                
+        await query.edit_message_text(
+            text=message,
+            reply_markup=create_back_button()
+        )
+    except Exception as e:
+        logger.error(f"خطأ في جلب أفضل اللاعبين: {e}")
+        await query.edit_message_text(
+            text="⚠️ حدث خطأ أثناء جلب البيانات.",
+            reply_markup=create_back_button()
+        )
+
+async def show_referral_link(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ref_code FROM users WHERE user_id = %s",
+                (user_id,)
+            )
+            result = cur.fetchone()
+            
+            if result:
+                ref_code = result[0]
+                ref_link = f"https://t.me/{BOT_USERNAME}?start={ref_code}"
+                message = (
+                    f"🔗 رابط الإحالة الخاص بك:\n\n"
+                    f"{ref_link}\n\n"
+                    f"شارك هذا الرابط مع أصدقائك واحصل على 10 نقاط لكل شخص ينضم عبره!"
+                )
+            else:
+                message = "⚠️ لم يتم العثور على حسابك."
+                
+        await query.edit_message_text(
+            text=message,
+            reply_markup=create_back_button()
+        )
+    except Exception as e:
+        logger.error(f"خطأ في جلب رابط الإحالة: {e}")
+        await query.edit_message_text(
+            text="⚠️ حدث خطأ أثناء جلب رابط الإحالة.",
+            reply_markup=create_back_button()
+        )
+
+async def show_top_referrals(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        conn = db_manager.get_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT username, ref_count 
+                FROM users 
+                ORDER BY ref_count DESC 
+                LIMIT 10
+            """)
+            top_referrals = cur.fetchall()
+            
+            if top_referrals:
+                message = "🏅 أفضل 10 أحالات:\n\n"
+                for i, (username, ref_count) in enumerate(top_referrals, 1):
+                    message += f"{i}. @{username} - {ref_count} إحالة\n"
+            else:
+                message = "لا يوجد إحالات مسجلة بعد."
+                
+        await query.edit_message_text(
+            text=message,
+            reply_markup=create_back_button()
+        )
+    except Exception as e:
+        logger.error(f"خطأ في جلب أفضل الأحالات: {e}")
+        await query.edit_message_text(
+            text="⚠️ حدث خطأ أثناء جلب البيانات.",
+            reply_markup=create_back_button()
+        )
 
 def keep_alive():
     while True:
