@@ -1,39 +1,11 @@
 {
-  "tasks": [
-    {
-      "type": "join_telegram",
-      "link": "https://t.me/minqx1official",
-      "reward": 10
-    },
-    {
-      "type": "follow_instagram",
-      "link": "https://www.instagram.com/minqx2025",
-      "reward": 10
-    },
-    {
-      "type": "like_facebook",
-      "link": "https://www.facebook.com/share/1BjH4qcGXb/",
-      "reward": 10
-    },
-    {
-      "type": "follow_twitter",
-      "link": "https://x.com/MinQX_Official?t=xQGqqJLnypq5TKP4jmDm2A&s=09",
-      "reward": 10
-    },
-    {
-      "type": "follow_tiktok",
-      "link": "https://www.tiktok.com/@minqx2?_t=ZS-8u9g1d9GPLe&_r=1",
-      "reward": 10
-    },
-    {
-      "type": "subscribe_youtube",
-      "link": "https://www.youtube.com/@MinQX_Official",
-      "reward": 10
-    },
-    {
-      "type": "referral",
-      "link": "https://t.me/MinQX_Bot",
-      "reward": 10
-    }
-  ]
+    "tasks": [
+        {"type": "join_telegram", "link": "https://t.me/minqx1official", "reward": 10},
+        {"type": "follow_instagram", "link": "https://www.instagram.com/minqx2025", "reward": 10},
+        {"type": "like_facebook", "link": "https://www.facebook.com/share/1BjH4qcGXb/", "reward": 10},
+        {"type": "follow_twitter", "link": "https://x.com/MinQX_Official", "reward": 10},
+        {"type": "follow_tiktok", "link": "https://www.tiktok.com/@minqx2", "reward": 10},
+        {"type": "subscribe_youtube", "link": "https://www.youtube.com/@MinQX_Official", "reward": 10},
+        {"type": "referral", "link": "https://t.me/MinQX_Bot?start=ref", "reward": 10}
+    ]
 }
