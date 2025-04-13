@@ -1,9 +1,9 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, CallbackContext
-import sqlite3
 import json
 import os
+import sqlite3
 from datetime import datetime
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, CallbackContext
 
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 
@@ -75,7 +75,7 @@ async def start(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"🎊 مرحبًا بك {user.first_name} في @MinQX_Bot 🎊\n"
+        f"🎊 مرحبًا بك {user.full_name} في @MinQX_Bot 🎊\n"
         f"✨ اختر أحد الخيارات من الأزرار أدناه ✨",
         reply_markup=reply_markup
     )
