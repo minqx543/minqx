@@ -118,11 +118,11 @@ TASK_TYPES = {
 
 # روابط المنصات الاجتماعية
 SOCIAL_MEDIA = {
-    "تويتر 🐦": "https://twitter.com/YourPage",
-    "إنستجرام 📸": "https://instagram.com/YourPage",
+    "تويتر 🐦": "https://x.com/MinQX_Official?t=xQGqqJLnypq5TKP4jmDm2A&s=09",
+    "إنستجرام 📸": "https://www.instagram.com/minqx2025?igsh=MTRhNmJtNm1wYWxqYw==",
     "تيليجرام 📢": "https://t.me/YourChannel",
-    "يوتيوب ▶️": "https://youtube.com/YourChannel",
-    "تيك توك 🎵": "https://tiktok.com/@YourPage"
+    "يوتيوب ▶️": "https://www.youtube.com/@MinQX_Official",
+    "تيك توك 🎵": "https://www.tiktok.com/@minqx2?_t=ZS-8u9g1d9GPLe&_r=1"
 }
 
 def generate_ref_code(user_id: int) -> str:
