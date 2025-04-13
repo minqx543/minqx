@@ -6,6 +6,7 @@
         {"type": "follow_twitter", "link": "https://x.com/MinQX_Official", "reward": 10},
         {"type": "follow_tiktok", "link": "https://www.tiktok.com/@minqx2", "reward": 10},
         {"type": "subscribe_youtube", "link": "https://www.youtube.com/@MinQX_Official", "reward": 10},
-        {"type": "referral", "link": "https://t.me/MinQX_Bot?start=ref", "reward": 10}
+        {"type": "referral", "link": "https://t.me/MinQX_Bot?start=ref", "reward": 10},
+        {"type": "daily_login", "link": "", "reward": 5}
     ]
 }
