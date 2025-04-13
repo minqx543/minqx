@@ -1,5 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import sqlite3
 import json
 import os
@@ -34,26 +34,20 @@ def get_user_data(user_id):
 def update_user(user_id, points=0, referrals=0):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR IGNORE INTO users (user_id) VALUES (?)
-    ''', (user_id,))
-    cursor.execute('''
-        UPDATE users SET points = points + ?, referrals = referrals + ? WHERE user_id = ?
-    ''', (points, referrals, user_id))
+    cursor.execute('INSERT OR IGNORE INTO users (user_id) VALUES (?)', (user_id,))
+    cursor.execute('UPDATE users SET points = points + ?, referrals = referrals + ? WHERE user_id = ?', (points, referrals, user_id))
     conn.commit()
     conn.close()
 
 def get_top_users(column, limit=10):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    cursor.execute(f'''
-        SELECT user_id, {column} FROM users ORDER BY {column} DESC LIMIT ?
-    ''', (limit,))
+    cursor.execute(f'SELECT user_id, {column} FROM users ORDER BY {column} DESC LIMIT ?', (limit,))
     results = cursor.fetchall()
     conn.close()
     return results
 
-async def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     args = context.args
     inviter_id = int(args[0]) if args and args[0].isdigit() else None
@@ -81,74 +75,47 @@ async def start(update: Update, context: CallbackContext):
         reply_markup=reply_markup
     )
 
-async def tasks(update: Update, context: CallbackContext):
-    tasks_msg = "✅️ المهام المتاحة:\n"
-    for task in load_tasks():
-        tasks_msg += f"\n- {task['type']}: {task['reward']} نقاط\n{task['link']}"
-    await update.message.reply_text(tasks_msg)
-
-async def score(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    points, referrals = get_user_data(user_id)
-    await update.message.reply_text(f"🤑 نقاطك: {points}\n🔥 عدد الإحالات: {referrals}")
-
-async def top(update: Update, context: CallbackContext):
-    top_users = get_top_users('points')
-    message = "🥇 أفضل 10 لاعبين حسب النقاط:\n"
-    for i, (uid, points) in enumerate(top_users, 1):
-        message += f"{i}. ID {uid}: {points} نقطة\n"
-    await update.message.reply_text(message)
-
-async def referrals(update: Update, context: CallbackContext):
-    user = update.effective_user
-    ref_link = f"https://t.me/MinQX_Bot?start={user.id}"
-    keyboard = [[InlineKeyboardButton("مشاركة الرابط", url=ref_link)]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"🔥 رابط الإحالة الخاص بك:\n{ref_link}", reply_markup=reply_markup)
-
-async def topreferrals(update: Update, context: CallbackContext):
-    top_users = get_top_users('referrals')
-    message = "🥇 أفضل 10 حسب عدد الإحالات:\n"
-    for i, (uid, refs) in enumerate(top_users, 1):
-        message += f"{i}. ID {uid}: {refs} إحالة\n"
-    await update.message.reply_text(message)
-
-async def handle_callback(update: Update, context: CallbackContext):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+    user = query.from_user
 
-    if data == "start":
-        await start(update, context)
-    elif data == "score":
-        await score(update, context)
-    elif data == "tasks":
-        await tasks(update, context)
-    elif data == "top":
-        await top(update, context)
+    if data == "score":
+        points, _ = get_user_data(user.id)
+        await query.edit_message_text(f"🤑 نقاطك الحالية: {points}")
     elif data == "referrals":
-        await referrals(update, context)
+        await query.edit_message_text(f"🔥 رابط الإحالة الخاص بك:\nhttps://t.me/MinQX_Bot?start={user.id}")
+    elif data == "top":
+        top = get_top_users("points")
+        msg = "🥇 أفضل 10 اللاعبين:\n"
+        for i, (uid, pts) in enumerate(top, start=1):
+            msg += f"{i}. ID: {uid} - نقاط: {pts}\n"
+        await query.edit_message_text(msg)
     elif data == "topreferrals":
-        await topreferrals(update, context)
+        top = get_top_users("referrals")
+        msg = "🥇 أفضل 10 من جلبوا إحالات:\n"
+        for i, (uid, ref) in enumerate(top, start=1):
+            msg += f"{i}. ID: {uid} - إحالات: {ref}\n"
+        await query.edit_message_text(msg)
+    elif data == "tasks":
+        tasks = load_tasks()
+        msg = "✅️ المهام المتاحة:\n"
+        for task in tasks:
+            msg += f"- {task['title']}: {task['description']} (نقاط: {task['points']})\n"
+        await query.edit_message_text(msg)
+    elif data == "start":
+        await start(update, context)
 
 def main():
     init_db()
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("tasks", tasks))
-    app.add_handler(CommandHandler("score", score))
-    app.add_handler(CommandHandler("top", top))
-    app.add_handler(CommandHandler("referrals", referrals))
-    app.add_handler(CommandHandler("topreferrals", topreferrals))
-    app.add_handler(CommandHandler("points", score))  # alias for score
-    app.add_handler(CommandHandler("top_referrals", topreferrals))  # optional
-    app.add_handler(CommandHandler("top_players", top))  # optional
-    app.add_handler(CommandHandler("myref", referrals))  # optional
+    app.add_handler(CallbackQueryHandler(button_handler))
 
-    app.add_handler(telegram.ext.CallbackQueryHandler(handle_callback))
-
+    print("Bot is running...")
     app.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
