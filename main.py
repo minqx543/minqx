@@ -75,7 +75,7 @@ async def start(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"🎊 مرحبًا بك {user.full_name} في @MinQX_Bot 🎊\n"
+        f"🎊 مرحبًا بك {user.full_name} في @MissionxX_bot 🎊\n"
         f"✨ اختر أحد الخيارات من الأزرار أدناه ✨",
         reply_markup=reply_markup
     )
@@ -92,7 +92,7 @@ async def handle_buttons(update: Update, context: CallbackContext):
     elif query.data == "referrals":
         await query.edit_message_text(
             f"🔥 رابط الإحالة الخاص بك:\n"
-            f"https://t.me/MinQX_Bot?start={user.id}"
+            f"http://t.me/MissionxX_bot?start={user.id}"
         )
 
     elif query.data == "top":
