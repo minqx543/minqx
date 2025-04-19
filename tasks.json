@@ -1,12 +1,12 @@
 {
-    "tasks": [
-        {"type": "join_telegram", "link": "https://t.me/MissionX_offici", "reward": 10},
-        {"type": "follow_instagram", "link": "https://www.instagram.com/missionx_offici?igsh=MTRhNmJtNm1wYWxqYw==", "reward": 10},
-        {"type": "like_facebook", "link": "https://www.facebook.com/share/15y7bKugWt/", "reward": 10},
-        {"type": "follow_twitter", "link": "https://x.com/MissionX_Offici?t=2a_ntYJ4pOs8FteAPyLnuQ&s=09", "reward": 10},
-        {"type": "follow_tiktok", "link": "https://www.tiktok.com/@missionx_offici?_t=ZS-8vYmInEMU48&_r=1", "reward": 10},
-        {"type": "subscribe_youtube", "link": "https://www.youtube.com/@MissionX_offici", "reward": 10},
-        {"type": "referral", "link": "http://t.me/MissionxX_bot", "reward": 10},
-        {"type": "daily_login", "link": "", "reward": 5}
-    ]
+  "tasks": [
+    {"type": "join_telegram", "link": "https://t.me/MissionX_offici", "reward": 10},
+    {"type": "follow_instagram", "link": "https://www.instagram.com/missionx_offici?igsh=MTRhNmJtNm1wYWxqYw==", "reward": 10},
+    {"type": "like_facebook", "link": "https://www.facebook.com/share/15y7bKugWt/", "reward": 10},
+    {"type": "follow_twitter", "link": "https://x.com/MissionX_Offici?t=2a_ntYJ4pOs8FteAPyLnuQ&s=09", "reward": 10},
+    {"type": "follow_tiktok", "link": "https://www.tiktok.com/@missionx_offici?_t=ZS-8vYmInEMU48&_r=1", "reward": 10},
+    {"type": "subscribe_youtube", "link": "https://www.youtube.com/@MissionX_offici", "reward": 10},
+    {"type": "referral", "link": "http://t.me/MissionxX_bot", "reward": 10},
+    {"type": "daily_login", "link": "", "reward": 5}
+  ]
 }
