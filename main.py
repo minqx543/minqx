@@ -2,22 +2,23 @@ import json
 import os
 import sqlite3
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, CallbackContext
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
 
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 
+# تحميل المهام من ملف JSON
 def load_tasks():
     with open('tasks.json', 'r', encoding='utf-8') as file:
         return json.load(file)['tasks']
 
+# إنشاء قاعدة البيانات إذا لم تكن موجودة
 def init_db():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            points INTEGER DEFAULT 0,
             referrals INTEGER DEFAULT 0,
             last_login TEXT
         )
@@ -25,118 +26,74 @@ def init_db():
     conn.commit()
     conn.close()
 
+# جلب بيانات مستخدم
 def get_user_data(user_id):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT points, referrals, last_login FROM users WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT referrals, last_login FROM users WHERE user_id = ?', (user_id,))
     data = cursor.fetchone()
     conn.close()
-    return data if data else (0, 0, None)
+    return data if data else (None, None)
 
-def update_user(user_id, points=0, referrals=0, last_login=None):
+# تحديث بيانات مستخدم
+def update_user(user_id, referrals=0, last_login=None):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('INSERT OR IGNORE INTO users (user_id) VALUES (?)', (user_id,))
     cursor.execute('''
-        UPDATE users SET points = points + ?, referrals = referrals + ?, last_login = ?
+        UPDATE users
+        SET referrals = referrals + ?, last_login = ?
         WHERE user_id = ?
-    ''', (points, referrals, last_login, user_id))
+    ''', (referrals, last_login, user_id))
     conn.commit()
     conn.close()
 
-def get_top_users(column, limit=10):
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute(f'SELECT user_id, {column} FROM users ORDER BY {column} DESC LIMIT ?', (limit,))
-    results = cursor.fetchall()
-    conn.close()
-    return results
-
+# الأمر /start
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     args = context.args
     inviter_id = int(args[0]) if args and args[0].isdigit() else None
 
-    is_new = get_user_data(user.id) == (0, 0, None)
-    update_user(user.id)
+    is_new = get_user_data(user.id)[0] is None
+    update_user(user.id, last_login=str(datetime.now()))
 
+    # إضافة إحالة
     if inviter_id and inviter_id != user.id and is_new:
-        update_user(inviter_id, points=10, referrals=1)
-        await context.bot.send_message(chat_id=inviter_id, text=f"🎉 لقد حصلت على 10 نقاط لأن {user.first_name} اشترك عبر رابطك!")
-
-    keyboard = [
-        [InlineKeyboardButton("🎉 بدء التفاعل", callback_data="start")],
-        [InlineKeyboardButton("🤑 نقاطك في اللعبة", callback_data="score")],
-        [InlineKeyboardButton("✅️ المهام المتاحة", callback_data="tasks")],
-        [InlineKeyboardButton("🥇 أفضل 10 اللاعبين", callback_data="top")],
-        [InlineKeyboardButton("🔥 رابط الإحالات", callback_data="referrals")],
-        [InlineKeyboardButton("🥇 افضل 10 إحالات", callback_data="topreferrals")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        f"🎊 مرحبًا بك {user.full_name} في @MissionxX_bot 🎊\n"
-        f"✨ اختر أحد الخيارات من الأزرار أدناه ✨",
-        reply_markup=reply_markup
-    )
-
-async def handle_buttons(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    user = query.from_user
-
-    if query.data == "score":
-        points, referrals, _ = get_user_data(user.id)
-        await query.edit_message_text(f"🤑 نقاطك الحالية: {points} نقطة\n🔗 عدد الإحالات: {referrals}")
-    
-    elif query.data == "referrals":
-        await query.edit_message_text(
-            f"🔥 رابط الإحالة الخاص بك:\n"
-            f"http://t.me/MissionxX_bot?start={user.id}"
+        update_user(inviter_id, referrals=1)
+        await context.bot.send_message(
+            chat_id=inviter_id,
+            text=f"لقد حصلت على إحالة جديدة من المستخدم {user.full_name}!"
         )
 
-    elif query.data == "top":
-        top = get_top_users('points')
-        msg = "🥇 أفضل 10 اللاعبين حسب النقاط:\n\n"
-        for i, (user_id, points) in enumerate(top, 1):
-            msg += f"{i}. ID: {user_id} - {points} نقطة\n"
-        await query.edit_message_text(msg)
+    tasks = load_tasks()
+    emoji_map = {
+        "join_telegram": "📢",
+        "follow_instagram": "📸",
+        "like_facebook": "📘",
+        "follow_twitter": "🐦",
+        "follow_tiktok": "🎵",
+        "subscribe_youtube": "▶️",
+        "referral": "👥",
+        "daily_login": "⏰"
+    }
 
-    elif query.data == "topreferrals":
-        top = get_top_users('referrals')
-        msg = "🥇 أفضل 10 بالإحالات:\n\n"
-        for i, (user_id, refs) in enumerate(top, 1):
-            msg += f"{i}. ID: {user_id} - {refs} إحالة\n"
-        await query.edit_message_text(msg)
+    message = f"مرحبًا {user.first_name}!\n\nقم بإكمال المهام التالية:\n\n"
 
-    elif query.data == "tasks":
-        tasks = load_tasks()
-        msg = "✅️ المهام المتاحة:\n\n"
-        for task in tasks:
-            msg += f"• {task['type'].replace('_', ' ').title()} - [اضغط هنا]({task['link']}) للحصول على {task['reward']} نقطة\n"
-        await query.edit_message_text(msg, disable_web_page_preview=True, parse_mode="Markdown")
+    for task in tasks:
+        icon = emoji_map.get(task['type'], "✅")
+        if task['type'] == "referral":
+            referral_link = f"http://t.me/YOUR_BOT_USERNAME?start={user.id}"
+            message += f"{icon} رابط الإحالة الخاص بك:\n{referral_link}\n\n"
+        elif task['link']:
+            message += f"{icon} {task['link']}\n\n"
 
-    elif query.data == "start":
-        await start(update, context)
+    await update.message.reply_text(message)
 
-    elif query.data == "daily_login":
-        points, referrals, last_login = get_user_data(user.id)
-        today = datetime.today().strftime('%Y-%m-%d')
-
-        if last_login != today:
-            update_user(user.id, points=points + 5, last_login=today)
-            await query.edit_message_text(f"🎉 تم تسجيل دخولك اليوم! حصلت على 5 نقاط. اجعلها عادة يومية!")
-        else:
-            await query.edit_message_text("🚫 لقد قمت بتسجيل الدخول اليوم بالفعل.")
-
+# تشغيل البوت
 def main():
     init_db()
     app = Application.builder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_buttons))
-
-    print("Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
