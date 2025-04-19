@@ -82,7 +82,7 @@ async def start(update: Update, context: CallbackContext):
     for task in tasks:
         icon = emoji_map.get(task['type'], "✅")
         if task['type'] == "referral":
-            referral_link = f"http://t.me/YOUR_BOT_USERNAME?start={user.id}"
+            referral_link = f"https://t.me/MissionX_offici?start={user.id}"
             message += f"{icon} رابط الإحالة الخاص بك:\n{referral_link}\n\n"
         elif task['link']:
             message += f"{icon} {task['link']}\n\n"
