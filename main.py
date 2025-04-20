@@ -47,7 +47,7 @@ async def referral(update: Update, context: CallbackContext) -> None:
     referral_link = f"https://t.me/MissionxX_bot?start={user_id}"
     await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_link}")
 
-# دالة عرض المتصدرين مع عرض اسم المستخدم
+# دالة عرض المتصدرين
 async def leaderboard(update: Update, context: CallbackContext) -> None:
     cursor.execute('''
         SELECT referrer_id, COUNT(*) as total 
@@ -64,12 +64,16 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
 
     message = "🏆 قائمة المتصدرين:\n"
     for idx, (user_id, total) in enumerate(top_referrers, start=1):
-        try:
-            user = await context.bot.get_chat(user_id)
-            name = user.username or user.first_name or f"مستخدم {user_id}"
-        except:
-            name = f"مستخدم {user_id}"
-        message += f"{idx}. {name} - {total} إحالة\n"
+        if idx == 1:
+            rank = "🥇"
+        elif idx == 2:
+            rank = "🥈"
+        elif idx == 3:
+            rank = "🥉"
+        else:
+            rank = f"#{idx}"
+
+        message += f"{rank} المستخدم {user_id} - {total} إحالة\n"
 
     await update.message.reply_text(message)
 
