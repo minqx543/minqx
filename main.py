@@ -1,5 +1,10 @@
+import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
+import asyncio
+
+# الحصول على التوكن من المتغيرات البيئية
+bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # قائمة روابط المنصات مع الأيقونات الخاصة بها
 platform_links = {
@@ -47,8 +52,11 @@ async def show_top_referrals(update: Update, context: CallbackContext):
     await update.message.reply_text(message)
 
 async def main():
-    # أدخل التوكن الخاص بك هنا
-    application = Application.builder().token("YOUR_BOT_TOKEN").build()
+    # استخدام المتغير البيئي لتوكن البوت
+    if bot_token is None:
+        raise ValueError("توكن البوت غير موجود في المتغيرات البيئية!")
+    
+    application = Application.builder().token(bot_token).build()
 
     # إضافة الأوامر
     application.add_handler(CommandHandler('platforms', show_platform_links))  # أمر لعرض روابط المنصات
@@ -59,5 +67,6 @@ async def main():
     await application.run_polling()
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())  # تشغيل الكود دون استخدام asyncio.run()
+    loop.run_forever()  # إبقاء الحلقة مستمرة
