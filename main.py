@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackContext
 
 # قائمة روابط المنصات مع الأيقونات الخاصة بها
 platform_links = {
@@ -26,39 +26,38 @@ referrals = {
 }
 
 # دالة لعرض روابط المنصات
-def show_platform_links(update: Update, context: CallbackContext):
+async def show_platform_links(update: Update, context: CallbackContext):
     message = "روابط المنصات:\n\n"
     for platform, link in platform_links.items():
         message += f"{platform}: {link}\n"
-    update.message.reply_text(message)
+    await update.message.reply_text(message)
 
 # دالة لعرض رابط مخصص للاعب
-def send_referral_link(update: Update, context: CallbackContext):
+async def send_referral_link(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     referral_link = f'http://t.me/MissionxX_bot?start={user_id}'
-    update.message.reply_text(f"رابطك المخصص: {referral_link}")
+    await update.message.reply_text(f"رابطك المخصص: {referral_link}")
 
 # دالة لعرض أول 10 إحالات
-def show_top_referrals(update: Update, context: CallbackContext):
+async def show_top_referrals(update: Update, context: CallbackContext):
     message = "أول 10 إحالات:\n\n"
     sorted_referrals = sorted(referrals.items(), key=lambda x: x[1]['referrals_count'], reverse=True)
     for rank, (key, value) in enumerate(sorted_referrals[:10], start=1):
         message += f"{rank}. {value['user']} - {value['referrals_count']} إحالات\n"
-    update.message.reply_text(message)
+    await update.message.reply_text(message)
 
-def main():
+async def main():
     # أدخل التوكن الخاص بك هنا
-    updater = Updater("YOUR_BOT_TOKEN", use_context=True)
-    dispatcher = updater.dispatcher
+    application = Application.builder().token("YOUR_BOT_TOKEN").build()
     
     # إضافة الأوامر
-    dispatcher.add_handler(CommandHandler('platforms', show_platform_links))  # أمر لعرض روابط المنصات
-    dispatcher.add_handler(CommandHandler('referral_link', send_referral_link))  # أمر لإرسال الرابط المخصص للاعب
-    dispatcher.add_handler(CommandHandler('top_referrals', show_top_referrals))  # أمر لعرض أول 10 إحالات
+    application.add_handler(CommandHandler('platforms', show_platform_links))  # أمر لعرض روابط المنصات
+    application.add_handler(CommandHandler('referral_link', send_referral_link))  # أمر لإرسال الرابط المخصص للاعب
+    application.add_handler(CommandHandler('top_referrals', show_top_referrals))  # أمر لعرض أول 10 إحالات
 
     # بدء البوت
-    updater.start_polling()
-    updater.idle()
+    await application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
