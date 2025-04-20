@@ -1,10 +1,13 @@
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
-import asyncio
 
 # الحصول على التوكن من المتغيرات البيئية
 bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# الحصول على البورت من المتغير البيئي
+port = os.getenv("PORT", 5000)  # إذا لم يكن البورت موجودًا، يستخدم 5000 بشكل افتراضي
 
 # قائمة روابط المنصات مع الأيقونات الخاصة بها
 platform_links = {
@@ -64,7 +67,7 @@ async def main():
     application.add_handler(CommandHandler('top_referrals', show_top_referrals))  # أمر لعرض أول 10 إحالات
 
     # بدء البوت
-    await application.run_polling()
+    await application.run_polling(drop_pending_updates=True, port=port)
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
