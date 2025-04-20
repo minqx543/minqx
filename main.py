@@ -12,7 +12,7 @@ def load_tasks():
     with open('tasks.json', 'r', encoding='utf-8') as file:
         return json.load(file)['tasks']
 
-# إنشاء قاعدة البيانات إذا لم تكن موجودة
+# إنشاء قاعدة البيانات
 def init_db():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -20,7 +20,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             referrals INTEGER DEFAULT 0,
-            last_login TEXT
+            last_login TEXT,
+            invited_by INTEGER
         )
     ''')
     conn.commit()
@@ -30,71 +31,82 @@ def init_db():
 def get_user_data(user_id):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT referrals, last_login FROM users WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT referrals, last_login, invited_by FROM users WHERE user_id = ?', (user_id,))
     data = cursor.fetchone()
     conn.close()
-    return data if data else (None, None)
+    return data if data else (None, None, None)
 
 # تحديث بيانات مستخدم
-def update_user(user_id, referrals=0, last_login=None):
+def update_user(user_id, referrals=0, last_login=None, invited_by=None):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('INSERT OR IGNORE INTO users (user_id) VALUES (?)', (user_id,))
-    cursor.execute('''
-        UPDATE users
-        SET referrals = referrals + ?, last_login = ?
-        WHERE user_id = ?
-    ''', (referrals, last_login, user_id))
+    if invited_by is not None:
+        cursor.execute('''
+            UPDATE users
+            SET referrals = referrals + ?, last_login = ?, invited_by = ?
+            WHERE user_id = ?
+        ''', (referrals, last_login, invited_by, user_id))
+    else:
+        cursor.execute('''
+            UPDATE users
+            SET referrals = referrals + ?, last_login = ?
+            WHERE user_id = ?
+        ''', (referrals, last_login, user_id))
     conn.commit()
     conn.close()
 
-# الأمر /start
+# أمر /start
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     args = context.args
     inviter_id = int(args[0]) if args and args[0].isdigit() else None
 
-    is_new = get_user_data(user.id)[0] is None
-    update_user(user.id, last_login=str(datetime.now()))
+    referrals, _, invited_by = get_user_data(user.id)
+    is_new = referrals is None
 
-    # إضافة إحالة
-    if inviter_id and inviter_id != user.id and is_new:
+    if is_new and inviter_id and inviter_id != user.id:
+        update_user(user.id, last_login=str(datetime.now()), invited_by=inviter_id)
         update_user(inviter_id, referrals=1)
         await context.bot.send_message(
             chat_id=inviter_id,
-            text=f"لقد حصلت على إحالة جديدة من المستخدم {user.full_name}!"
+            text=f"لقد حصلت على إحالة جديدة من {user.full_name}!"
         )
+    else:
+        update_user(user.id, last_login=str(datetime.now()))
 
+    # إرسال المهام
     tasks = load_tasks()
-    emoji_map = {
-        "join_telegram": "📢",
-        "follow_instagram": "📸",
-        "like_facebook": "📘",
-        "follow_twitter": "🐦",
-        "follow_tiktok": "🎵",
-        "subscribe_youtube": "▶️",
-        "referral": "👥",
-        "daily_login": "⏰"
-    }
-
-    message = f"مرحبًا {user.first_name}!\n\nقم بإكمال المهام التالية:\n\n"
-
+    task_text = "✅ *مهام اليوم:*\n"
     for task in tasks:
-        icon = emoji_map.get(task['type'], "✅")
-        if task['type'] == "referral":
-            referral_link = f"https://t.me/MissionX_offici?start={user.id}"
-            message += f"{icon} رابط الإحالة الخاص بك:\n{referral_link}\n\n"
-        elif task['link']:
-            message += f"{icon} {task['link']}\n\n"
+        task_text += f"\n- {task['title']}: [اضغط هنا]({task['url']})"
 
-    await update.message.reply_text(message)
+    # إرسال رابط الإحالة
+    referral_link = f"https://t.me/{context.bot.username}?start={user.id}"
+    task_text += f"\n\n🎯 رابط الإحالة الخاص بك:\n{referral_link}"
+    task_text += "\n\nارسل هذا الرابط لأصدقائك وكل من يسجل عن طريقك يحسب لك إحالة!"
+
+    await context.bot.send_message(
+        chat_id=user.id,
+        text=task_text,
+        parse_mode='Markdown'
+    )
+
+# أمر /myrefs
+async def myrefs(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    referrals, _, _ = get_user_data(user_id)
+    referrals = referrals or 0
+    await update.message.reply_text(f"لديك {referrals} إحالة.")
 
 # تشغيل البوت
 def main():
     init_db()
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("myrefs", myrefs))
+    print("Bot is running...")
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
