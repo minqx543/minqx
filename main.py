@@ -1,16 +1,9 @@
-import os
-import sqlite3
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
+import sqlite3
+import os
 
-# الحصول على التوكن من متغير البيئة
-bot_token = os.getenv('BOT_TOKEN')
-
-# التحقق من وجود التوكن
-if not bot_token:
-    raise ValueError("بوت توكن غير موجود في متغير البيئة")
-
-# إنشاء قاعدة بيانات SQLite لتخزين المهام
+# إنشاء قاعدة بيانات SQLite لتخزين المهام والإحالات
 conn = sqlite3.connect('tasks.db')
 cursor = conn.cursor()
 
@@ -24,60 +17,85 @@ CREATE TABLE IF NOT EXISTS tasks (
 )
 ''')
 
-# دالة لعرض المهام
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS referrals (
+    referrer_id INTEGER,
+    referred_id INTEGER
+)
+''')
+
+# دالة /start
 async def start(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
-    cursor.execute("SELECT * FROM tasks WHERE user_id=?", (user_id,))
-    tasks = cursor.fetchall()
+    await update.message.reply_text("مرحباً بك في بوت MissionX! استخدم /links لرؤية روابط المنصات، /referral لرابط الإحالة، و /leaderboard لعرض قائمة المتصدرين.")
 
-    if not tasks:
-        await update.message.reply_text("لا توجد مهام لديك.")
+# دالة عرض روابط المنصات
+async def links(update: Update, context: CallbackContext) -> None:
+    platform_links = (
+        "🌐 روابط المنصات:\n"
+        "🔹 [Telegram](https://t.me/MissionX_offici)\n"
+        "🔹 [YouTube](https://youtube.com/@missionx_offici?si=4A549AkxABu523zi)\n"
+        "🔹 [TikTok](https://www.tiktok.com/@missionx_offici?_t=ZS-8vgxNwgERtP&_r=1)\n"
+        "🔹 [X](https://x.com/MissionX_Offici?t=eqZ5raOAaRfhwivFVe68rg&s=09)\n"
+        "🔹 [Facebook](https://www.facebook.com/share/19AMU41hhs/)\n"
+        "🔹 [Instagram](https://www.instagram.com/missionx_offici?igsh=MTRhNmJtNm1wYWxqYw==)\n"
+    )
+    await update.message.reply_text(platform_links, disable_web_page_preview=True)
+
+# دالة عرض رابط الإحالة
+async def referral(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    referral_link = f"https://t.me/MissionxX_bot?start={user_id}"
+    await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_link}")
+
+# دالة عرض المتصدرين
+async def leaderboard(update: Update, context: CallbackContext) -> None:
+    cursor.execute('''
+        SELECT referrer_id, COUNT(*) as total 
+        FROM referrals 
+        GROUP BY referrer_id 
+        ORDER BY total DESC 
+        LIMIT 10
+    ''')
+    top_referrers = cursor.fetchall()
+
+    if not top_referrers:
+        await update.message.reply_text("لا يوجد إحالات بعد.")
         return
 
-    task_list = "\n".join([f"{task[2]} - {'تم إتمامها' if task[3] else 'لم تتم'}" for task in tasks])
-    await update.message.reply_text(f"مهامك:\n{task_list}")
+    message = "🏆 قائمة المتصدرين:\n"
+    for idx, (user_id, total) in enumerate(top_referrers, start=1):
+        message += f"{idx}. المستخدم {user_id} - {total} إحالة\n"
 
-# دالة لإضافة مهمة جديدة
-async def add_task(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text(message)
+
+# دالة إضافة إحالة تلقائياً عند البدء بالرابط
+async def handle_referral(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
-    task_name = " ".join(context.args)
-    
-    if not task_name:
-        await update.message.reply_text("يرجى إدخال اسم المهمة.")
-        return
-    
-    cursor.execute("INSERT INTO tasks (user_id, task_name, completed) VALUES (?, ?, ?)", 
-                   (user_id, task_name, 0))
-    conn.commit()
-    
-    await update.message.reply_text(f"تم إضافة المهمة: {task_name}")
+    args = context.args
 
-# دالة لتغيير حالة إتمام المهمة
-async def complete_task(update: Update, context: CallbackContext) -> None:
-    user_id = update.effective_user.id
-    task_id = int(context.args[0]) if context.args else None
-    
-    if not task_id:
-        await update.message.reply_text("يرجى إدخال معرف المهمة.")
-        return
-    
-    cursor.execute("UPDATE tasks SET completed = 1 WHERE id = ? AND user_id = ?", (task_id, user_id))
-    conn.commit()
-    
-    await update.message.reply_text(f"تم إتمام المهمة برقم: {task_id}")
+    if args:
+        try:
+            referrer_id = int(args[0])
+            if referrer_id != user_id:
+                cursor.execute("SELECT * FROM referrals WHERE referrer_id = ? AND referred_id = ?", (referrer_id, user_id))
+                if not cursor.fetchone():
+                    cursor.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)", (referrer_id, user_id))
+                    conn.commit()
+        except:
+            pass
+    await start(update, context)
 
-# دالة رئيسية لتشغيل البوت
+# تشغيل البوت
 def main():
-    # استبدال التوكن باستخدام متغير البيئة
-    application = Application.builder().token(bot_token).build()
+    TOKEN = os.getenv("BOT_TOKEN")
+    application = Application.builder().token(TOKEN).build()
 
-    # إضافة معالجات الأوامر
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("add", add_task))
-    application.add_handler(CommandHandler("complete", complete_task))
+    application.add_handler(CommandHandler("start", handle_referral))
+    application.add_handler(CommandHandler("links", links))
+    application.add_handler(CommandHandler("referral", referral))
+    application.add_handler(CommandHandler("leaderboard", leaderboard))
 
-    # بدء البوت
     application.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
