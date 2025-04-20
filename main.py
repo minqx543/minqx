@@ -1,75 +1,46 @@
-import os
+import logging
 import asyncio
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackContext
+import os
+from telegram import BotCommand
+from telegram.ext import ApplicationBuilder
 
-# الحصول على التوكن من المتغيرات البيئية
-bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+# استيراد الأوامر من ملف handlers
+from handlers.start import start_handler
+from handlers.referral import referral_handler
+from handlers.leaderboard import leaderboard_handler
+from handlers.links import links_handler
 
-# الحصول على البورت من المتغير البيئي
-port = os.getenv("PORT", 5000)  # إذا لم يكن البورت موجودًا، يستخدم 5000 بشكل افتراضي
+# إعداد سجل الأخطاء
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-# قائمة روابط المنصات مع الأيقونات الخاصة بها
-platform_links = {
-    'Telegram': 'https://t.me/MissionX_offici',
-    'YouTube': 'https://youtube.com/@missionx_offici?si=qfAeZiZLbocPNPEg',
-    'Instagram': 'https://www.instagram.com/missionx_offici?igsh=MTRhNmJtNm1wYWxqYw==',
-    'Facebook': 'https://www.facebook.com/share/16XnNU7d2f/',
-    'TikTok': 'https://www.tiktok.com/@missionx_offici?_t=ZS-8vgkpj65Axz&_r=1',
-    'Twitter': 'https://x.com/MissionX_Offici?t=m8UsTWjQrgF59mZ5s88CFA&s=09'
-}
-
-# نموذج بيانات الإحالات
-referrals = {
-    1: {'user': 'User1', 'referrals_count': 15},
-    2: {'user': 'User2', 'referrals_count': 12},
-    3: {'user': 'User3', 'referrals_count': 10},
-    4: {'user': 'User4', 'referrals_count': 9},
-    5: {'user': 'User5', 'referrals_count': 8},
-    6: {'user': 'User6', 'referrals_count': 7},
-    7: {'user': 'User7', 'referrals_count': 6},
-    8: {'user': 'User8', 'referrals_count': 5},
-    9: {'user': 'User9', 'referrals_count': 4},
-    10: {'user': 'User10', 'referrals_count': 3}
-}
-
-# دالة لعرض روابط المنصات
-async def show_platform_links(update: Update, context: CallbackContext):
-    message = "🌐 روابط المنصات:\n\n"
-    for platform, link in platform_links.items():
-        message += f"{platform}: {link}\n"
-    await update.message.reply_text(message)
-
-# دالة لعرض رابط مخصص للاعب
-async def send_referral_link(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-    referral_link = f'http://t.me/MissionxX_bot?start={user_id}'
-    await update.message.reply_text(f"🔗 رابطك المخصص: {referral_link}")
-
-# دالة لعرض أول 10 إحالات
-async def show_top_referrals(update: Update, context: CallbackContext):
-    message = "🏆 أول 10 إحالات:\n\n"
-    sorted_referrals = sorted(referrals.items(), key=lambda x: x[1]['referrals_count'], reverse=True)
-    for rank, (key, value) in enumerate(sorted_referrals[:10], start=1):
-        message += f"{rank}. {value['user']} - {value['referrals_count']} إحالات\n"
-    await update.message.reply_text(message)
-
+# الدالة الرئيسية لتشغيل البوت
 async def main():
-    # استخدام المتغير البيئي لتوكن البوت
-    if bot_token is None:
-        raise ValueError("توكن البوت غير موجود في المتغيرات البيئية!")
-    
-    application = Application.builder().token(bot_token).build()
+    token = os.getenv("BOT_TOKEN")  # تأكد من وجود هذا المتغير في بيئة Render
+    if not token:
+        raise ValueError("BOT_TOKEN not set in environment variables")
 
-    # إضافة الأوامر
-    application.add_handler(CommandHandler('platforms', show_platform_links))  # أمر لعرض روابط المنصات
-    application.add_handler(CommandHandler('referral_link', send_referral_link))  # أمر لإرسال الرابط المخصص للاعب
-    application.add_handler(CommandHandler('top_referrals', show_top_referrals))  # أمر لعرض أول 10 إحالات
+    application = ApplicationBuilder().token(token).build()
 
-    # بدء البوت
-    await application.run_polling(drop_pending_updates=True, port=port)
+    # إضافة الهاندلرز (الأوامر)
+    application.add_handler(start_handler)
+    application.add_handler(referral_handler)
+    application.add_handler(leaderboard_handler)
+    application.add_handler(links_handler)
+
+    # تعيين أوامر البوت في واجهة Telegram
+    commands = [
+        BotCommand("start", "بدء استخدام البوت"),
+        BotCommand("referral", "رابط الإحالة الخاص بك"),
+        BotCommand("leaderboard", "أفضل 10 محيلين"),
+        BotCommand("links", "روابط المنصات")
+    ]
+    await application.bot.set_my_commands(commands)
+
+    # تشغيل البوت باستخدام polling (لا نحتاج لمنفذ)
+    await application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    loop.create_task(main())  # تشغيل الكود دون استخدام asyncio.run()
-    loop.run_forever()  # إبقاء الحلقة مستمرة
+    asyncio.run(main())
