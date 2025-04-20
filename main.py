@@ -20,9 +20,14 @@ CREATE TABLE IF NOT EXISTS tasks (
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS referrals (
     referrer_id INTEGER,
-    referred_id INTEGER
+    referred_id INTEGER,
+    referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- تاريخ الإحالة
+    PRIMARY KEY (referrer_id, referred_id)
 )
 ''')
+
+# حفظ التغييرات
+conn.commit()
 
 # دالة /start
 async def start(update: Update, context: CallbackContext) -> None:
@@ -92,8 +97,8 @@ async def handle_referral(update: Update, context: CallbackContext) -> None:
                 if not cursor.fetchone():
                     cursor.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)", (referrer_id, user_id))
                     conn.commit()
-        except:
-            pass
+        except Exception as e:
+            print(f"Error handling referral: {e}")
     await start(update, context)
 
 # تشغيل البوت
