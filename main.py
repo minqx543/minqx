@@ -35,35 +35,33 @@ def get_db_connection():
 # تهيئة الجداول
 def init_db():
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                task_name TEXT NOT NULL,
-                completed INTEGER DEFAULT 0
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS referrals (
-                referrer_id INTEGER NOT NULL,
-                referred_id INTEGER NOT NULL,
-                referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (referrer_id, referred_id)
-            )
-        """)
-        
-        conn.commit()
-        logger.info("تم تهيئة الجداول بنجاح")
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # جدول المهام
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        task_name TEXT NOT NULL,
+                        completed INTEGER DEFAULT 0
+                    )
+                """)
+                
+                # جدول الإحالات (تم تعديل اسم العمود إلى referred_by)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS referrals (
+                        referred_by INTEGER NOT NULL,
+                        referred_id INTEGER NOT NULL,
+                        referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (referred_by, referred_id)
+                    )
+                """)
+                
+                conn.commit()
+                logger.info("تم تهيئة الجداول بنجاح")
     except Exception as e:
         logger.error(f"خطأ في تهيئة الجداول: {str(e)}")
         raise
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 # استدعاء تهيئة قاعدة البيانات عند التشغيل
 init_db()
@@ -72,7 +70,12 @@ init_db()
 async def start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     logger.info(f"مستخدم {user.id} ({user.first_name}) قام بتشغيل البوت")
-    await update.message.reply_text("مرحباً بك في بوت MissionX! استخدم /links لرؤية روابط المنصات، /referral لرابط الإحالة، و /leaderboard لعرض قائمة المتصدرين.")
+    await update.message.reply_text(
+        "مرحباً بك في بوت MissionX!\n"
+        "استخدم /links لرؤية روابط المنصات\n"
+        "/referral لرابط الإحالة\n"
+        "/leaderboard لعرض قائمة المتصدرين"
+    )
 
 # دالة عرض روابط المنصات
 async def links(update: Update, context: CallbackContext) -> None:
@@ -97,7 +100,10 @@ async def referral(update: Update, context: CallbackContext) -> None:
     referral_link = f"https://t.me/MissionxX_bot?start={user_id}"
     
     logger.info(f"مستخدم {user_id} ({user.first_name}) طلب رابط الإحالة")
-    await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_link}")
+    await update.message.reply_text(
+        f"رابط الإحالة الخاص بك:\n{referral_link}\n\n"
+        "شارك هذا الرابط مع أصدقائك واحصل على نقاط عند تسجيلهم!"
+    )
 
 # دالة عرض المتصدرين
 async def leaderboard(update: Update, context: CallbackContext) -> None:
@@ -105,21 +111,22 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
     logger.info(f"مستخدم {user.id} طلب لوحة المتصدرين")
     
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT referrer_id, COUNT(*) as total 
-            FROM referrals 
-            GROUP BY referrer_id 
-            ORDER BY total DESC 
-            LIMIT 10
-        ''')
-        top_referrers = cursor.fetchall()
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('''
+                    SELECT referred_by, COUNT(*) as total 
+                    FROM referrals 
+                    GROUP BY referred_by 
+                    ORDER BY total DESC 
+                    LIMIT 10
+                ''')
+                top_referrers = cursor.fetchall()
 
         if not top_referrers:
-            logger.info("لا توجد إحالات لعرضها")
-            await update.message.reply_text("لا يوجد إحالات بعد.")
+            await update.message.reply_text(
+                "لا يوجد إحالات بعد.\n"
+                "كن أول من يجلب أعضاء جدد باستخدام رابط الإحالة الخاص بك (/referral)!"
+            )
             return
 
         message = "🏆 قائمة المتصدرين:\n"
@@ -145,9 +152,6 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
     except Exception as e:
         logger.error(f"خطأ في جلب لوحة المتصدرين: {e}")
         await update.message.reply_text("حدث خطأ أثناء جلب لوحة المتصدرين.")
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 # دالة إضافة إحالة تلقائياً عند البدء بالرابط
 async def handle_referral(update: Update, context: CallbackContext) -> None:
@@ -159,43 +163,62 @@ async def handle_referral(update: Update, context: CallbackContext) -> None:
 
     if args:
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
             referrer_id = int(args[0])
-            if referrer_id != user_id:
-                cursor.execute("SELECT * FROM referrals WHERE referrer_id = %s AND referred_id = %s", 
-                             (referrer_id, user_id))
-                if not cursor.fetchone():
-                    cursor.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (%s, %s)", 
-                                  (referrer_id, user_id))
-                    conn.commit()
-                    logger.info(f"تم تسجيل إحالة جديدة: {referrer_id} أحال {user_id}")
+            
+            # التحقق من عدم استخدام المستخدم لرابطه الخاص
+            if referrer_id == user_id:
+                await update.message.reply_text("⚠️ لا يمكنك استخدام رابط الإحالة الخاص بك!")
+                return
+                
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    # التحقق من عدم تكرار الإحالة
+                    cursor.execute("""
+                        SELECT * FROM referrals 
+                        WHERE referred_by = %s AND referred_id = %s
+                    """, (referrer_id, user_id))
                     
-                    try:
-                        await context.bot.send_message(
-                            chat_id=referrer_id,
-                            text=f"🎉 تم تسجيل إحالة جديدة بواسطة {user.first_name}!"
-                        )
-                    except Exception as e:
-                        logger.warning(f"لا يمكن إرسال إشعار للمحيل: {e}")
-                    
-                    try:
-                        referred_user = await context.bot.get_chat(referrer_id)
-                        username = f"@{referred_user.username}" if referred_user.username else str(referrer_id)
-                        await update.message.reply_text(f"شكراً لتسجيلك عبر إحالة المستخدم {username}!")
-                    except Exception as e:
-                        logger.warning(f"خطأ في جلب معلومات المحيل: {e}")
-                        await update.message.reply_text(f"شكراً لتسجيلك عبر إحالة المستخدم #{referrer_id}!")
-                else:
-                    logger.info(f"إحالة مكررة: {referrer_id} -> {user_id}")
+                    if cursor.fetchone():
+                        logger.info(f"إحالة مكررة: {referrer_id} -> {user_id}")
+                        await update.message.reply_text("تم تسجيل إحالتك مسبقاً!")
+                    else:
+                        # تسجيل الإحالة الجديدة
+                        cursor.execute("""
+                            INSERT INTO referrals (referred_by, referred_id) 
+                            VALUES (%s, %s)
+                        """, (referrer_id, user_id))
+                        conn.commit()
+                        logger.info(f"تم تسجيل إحالة جديدة: {referrer_id} أحال {user_id}")
+                        
+                        # إرسال إشعار للمحيل
+                        try:
+                            await context.bot.send_message(
+                                chat_id=referrer_id,
+                                text=f"🎉 تم تسجيل إحالة جديدة بواسطة {user.first_name}!"
+                            )
+                        except Exception as e:
+                            logger.warning(f"لا يمكن إرسال إشعار للمحيل: {e}")
+                        
+                        # إرسال رسالة للمستخدم الجديد
+                        try:
+                            referred_user = await context.bot.get_chat(referrer_id)
+                            username = f"@{referred_user.username}" if referred_user.username else referred_user.first_name
+                            await update.message.reply_text(
+                                f"شكراً لتسجيلك عبر إحالة المستخدم {username}!\n"
+                                "استخدم /help لمعرفة كيفية استخدام البوت"
+                            )
+                        except Exception as e:
+                            logger.warning(f"خطأ في جلب معلومات المحيل: {e}")
+                            await update.message.reply_text(
+                                f"شكراً لتسجيلك عبر إحالة المستخدم #{referrer_id}!\n"
+                                "استخدم /help لمعرفة كيفية استخدام البوت"
+                            )
         except ValueError:
             logger.warning(f"معرف إحالة غير صالح: {args[0]}")
+            await update.message.reply_text("رابط الإحالة غير صالح!")
         except Exception as e:
             logger.error(f"خطأ في معالجة الإحالة: {e}")
-        finally:
-            if 'conn' in locals():
-                conn.close()
+            await update.message.reply_text("حدث خطأ أثناء معالجة إحالتك.")
 
     await start(update, context)
 
@@ -210,6 +233,7 @@ def main():
         application = Application.builder().token(TOKEN).build()
         logger.info("تم تهيئة تطبيق البوت بنجاح")
 
+        # إضافة معالجات الأوامر
         application.add_handler(CommandHandler("start", handle_referral))
         application.add_handler(CommandHandler("links", links))
         application.add_handler(CommandHandler("referral", referral))
