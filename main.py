@@ -1,6 +1,14 @@
+import os
+import sqlite3
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
-import sqlite3
+
+# الحصول على التوكن من متغير البيئة
+bot_token = os.getenv('BOT_TOKEN')
+
+# التحقق من وجود التوكن
+if not bot_token:
+    raise ValueError("بوت توكن غير موجود في متغير البيئة")
 
 # إنشاء قاعدة بيانات SQLite لتخزين المهام
 conn = sqlite3.connect('tasks.db')
@@ -60,8 +68,8 @@ async def complete_task(update: Update, context: CallbackContext) -> None:
 
 # دالة رئيسية لتشغيل البوت
 def main():
-    # استبدل "YOUR_BOT_TOKEN" بالتوكن الخاص بك
-    application = Application.builder().token("YOUR_BOT_TOKEN").build()
+    # استبدال التوكن باستخدام متغير البيئة
+    application = Application.builder().token(bot_token).build()
 
     # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
