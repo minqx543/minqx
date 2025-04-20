@@ -1,129 +1,75 @@
-import logging
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackContext
 import sqlite3
 
-# تفعيل السجل لتتبع الأخطاء
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# إنشاء قاعدة بيانات SQLite لتخزين المهام
+conn = sqlite3.connect('tasks.db')
+cursor = conn.cursor()
 
-# إعداد الاتصال بقاعدة البيانات
-def connect_db():
-    conn = sqlite3.connect('missions.db')
-    return conn
+# إذا لم تكن الجداول موجودة، قم بإنشائها
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    task_name TEXT,
+    completed INTEGER
+)
+''')
 
-# إنشاء الجداول في قاعدة البيانات إذا لم تكن موجودة
-def create_tables():
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        points INTEGER DEFAULT 0
-    )''')
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS missions (
-        mission_id INTEGER PRIMARY KEY,
-        mission_name TEXT,
-        points INTEGER
-    )''')
-    conn.commit()
-    conn.close()
+# دالة لعرض المهام
+async def start(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    cursor.execute("SELECT * FROM tasks WHERE user_id=?", (user_id,))
+    tasks = cursor.fetchall()
 
-# إضافة مستخدم إلى قاعدة البيانات إذا لم يكن موجودًا
-def add_user(user_id, username):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-    INSERT OR IGNORE INTO users (user_id, username, points) 
-    VALUES (?, ?, ?)
-    ''', (user_id, username, 0))
-    conn.commit()
-    conn.close()
-
-# الحصول على النقاط الخاصة بالمستخدم
-def get_user_points(user_id):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT points FROM users WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    if result:
-        return result[0]
-    return 0
-
-# تحديث النقاط الخاصة بالمستخدم
-def update_user_points(user_id, points):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE users SET points = points + ? WHERE user_id = ?', (points, user_id))
-    conn.commit()
-    conn.close()
-
-# إضافة مهمة جديدة
-def add_mission(mission_name, points):
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-    INSERT INTO missions (mission_name, points) VALUES (?, ?)
-    ''', (mission_name, points))
-    conn.commit()
-    conn.close()
-
-# عرض المهام للمستخدم
-def list_missions():
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute('SELECT mission_name, points FROM missions')
-    missions = cursor.fetchall()
-    conn.close()
-    return missions
-
-# تعريف الأوامر
-def start(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-    username = update.message.from_user.username
-    add_user(user_id, username)
-
-    points = get_user_points(user_id)
-    update.message.reply_text(f"مرحبًا {username}!\nنقاطك الحالية: {points}")
-
-def complete_mission(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-
-    missions = list_missions()
-    if not missions:
-        update.message.reply_text("لا توجد مهام حالياً.")
+    if not tasks:
+        await update.message.reply_text("لا توجد مهام لديك.")
         return
 
-    mission_name, points = missions[0]  # اختيار المهمة الأولى كمثال
-    update_user_points(user_id, points)
-    update.message.reply_text(f"لقد أكملت المهمة: {mission_name}!\nتم إضافة {points} نقاط!")
+    task_list = "\n".join([f"{task[2]} - {'تم إتمامها' if task[3] else 'لم تتم'}" for task in tasks])
+    await update.message.reply_text(f"مهامك:\n{task_list}")
 
-def show_points(update: Update, context: CallbackContext):
-    user_id = update.message.from_user.id
-    points = get_user_points(user_id)
-    update.message.reply_text(f"نقاطك الحالية: {points}")
+# دالة لإضافة مهمة جديدة
+async def add_task(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    task_name = " ".join(context.args)
+    
+    if not task_name:
+        await update.message.reply_text("يرجى إدخال اسم المهمة.")
+        return
+    
+    cursor.execute("INSERT INTO tasks (user_id, task_name, completed) VALUES (?, ?, ?)", 
+                   (user_id, task_name, 0))
+    conn.commit()
+    
+    await update.message.reply_text(f"تم إضافة المهمة: {task_name}")
 
-# تعريف وظيفة رئيسية لتشغيل البوت
+# دالة لتغيير حالة إتمام المهمة
+async def complete_task(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    task_id = int(context.args[0]) if context.args else None
+    
+    if not task_id:
+        await update.message.reply_text("يرجى إدخال معرف المهمة.")
+        return
+    
+    cursor.execute("UPDATE tasks SET completed = 1 WHERE id = ? AND user_id = ?", (task_id, user_id))
+    conn.commit()
+    
+    await update.message.reply_text(f"تم إتمام المهمة برقم: {task_id}")
+
+# دالة رئيسية لتشغيل البوت
 def main():
-    # إعداد البوت باستخدام المفتاح API الخاص بك
-    updater = Updater("YOUR_BOT_API_KEY", use_context=True)
+    # استبدل "YOUR_BOT_TOKEN" بالتوكن الخاص بك
+    application = Application.builder().token("YOUR_BOT_TOKEN").build()
 
-    # إنشاء الجداول في قاعدة البيانات عند تشغيل البوت
-    create_tables()
-
-    dp = updater.dispatcher
-
-    # إضافة الأوامر للبوت
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("complete_mission", complete_mission))
-    dp.add_handler(CommandHandler("points", show_points))
+    # إضافة معالجات الأوامر
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("add", add_task))
+    application.add_handler(CommandHandler("complete", complete_task))
 
     # بدء البوت
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
