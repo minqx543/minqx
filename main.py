@@ -2,20 +2,24 @@ import logging
 import asyncio
 import os
 import sqlite3
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram.error import RetryAfter
 
-# قراءة المتغيرات من Render
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_USERNAME = os.getenv("BOT_USERNAME")
-PLATFORM_LINKS = os.getenv("PLATFORM_LINKS", "لا توجد روابط حالياً.")
+BOT_USERNAME = "MissionxX_bot"  # بدون @
+PLATFORM_LINKS = """
+يوتيوب: https://www.youtube.com/@MissionX_offici
+تويتر (X): https://x.com/MissionX_Offici?t=2a_ntYJ4pOs8FteAPyLnuQ&s=09
+انستغرام: https://www.instagram.com/minqx2025/?utm_source=qr&r=nametag
+تيليجرام: https://t.me/MissionX_offici
+فيسبوك: https://www.facebook.com/share/1F45g9xY8M/
+تيك توك: https://www.tiktok.com/@missionx_offici?_t=ZS-8vguTuRcP7y&_r=1
+"""
 
-# إعداد سجل الأخطاء
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# قاعدة البيانات
 def init_db():
     conn = sqlite3.connect('referrals.db')
     cursor = conn.cursor()
@@ -30,7 +34,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# دالة الحماية من Flood Control
 async def handle_flood_control(func, *args, **kwargs):
     while True:
         try:
@@ -42,7 +45,6 @@ async def handle_flood_control(func, *args, **kwargs):
             logger.error(f"Unexpected error: {e}")
             raise
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     conn = sqlite3.connect('referrals.db')
@@ -57,36 +59,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args and context.args[0].isdigit():
         referrer_id = int(context.args[0])
         if referrer_id != user.id:
-            cursor.execute('UPDATE referrals SET referrals_count = referrals_count + 1 WHERE user_id = ?',
-                           (referrer_id,))
-            conn.commit()
+            cursor.execute('SELECT * FROM referrals WHERE user_id = ?', (referrer_id,))
+            if cursor.fetchone():
+                cursor.execute('UPDATE referrals SET referrals_count = referrals_count + 1 WHERE user_id = ?',
+                               (referrer_id,))
+                conn.commit()
+                logger.info(f"New referral from {user.id} to {referrer_id}")
 
     conn.close()
 
-    reply_text = f"""مرحباً {user.first_name}!
+    keyboard = [[InlineKeyboardButton("روابط المنصات", url="https://t.me/" + BOT_USERNAME)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-روابط منصاتي:
-{PLATFORM_LINKS}
-"""
-    keyboard = [
-        [InlineKeyboardButton("احصل على رابط إحالتك", callback_data="get_referral")],
-    ]
-    await handle_flood_control(
-        update.message.reply_text,
-        reply_text,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    message = f"مرحباً {user.first_name}!\n\nتابع منصاتنا:\n{PLATFORM_LINKS}\n\nاستخدم /referral_link للحصول على رابط الإحالة الخاص بك.\nواستخدم /top_referrals لرؤية أفضل المحيلين."
+    await handle_flood_control(update.message.reply_text, message, reply_markup=reply_markup)
 
-# أمر للحصول على رابط الإحالة
 async def referral_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    link = f"https://t.me/{BOT_USERNAME}?start={user.id}"
-    await handle_flood_control(
-        update.message.reply_text,
-        f"رابط الإحالة الخاص بك:\n{link}"
-    )
+    referral_url = f"http://t.me/{BOT_USERNAME}?start={user.id}"
+    await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_url}")
 
-# عرض أفضل 10 محيلين
 async def top_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('referrals.db')
     cursor = conn.cursor()
@@ -95,38 +87,22 @@ async def top_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not top_users:
-        await update.message.reply_text("لا يوجد إحالات حتى الآن.")
+        await update.message.reply_text("لا يوجد إحالات بعد.")
         return
 
-    msg = "**أفضل 10 محيلين:**\n\n"
-    for i, (name, count) in enumerate(top_users, 1):
-        msg += f"{i}. {name} - {count} إحالة\n"
+    message = "أفضل 10 محيلين:\n\n"
+    for i, (name, count) in enumerate(top_users, start=1):
+        message += f"{i}. {name} — {count} إحالة\n"
 
-    await handle_flood_control(update.message.reply_text, msg)
+    await update.message.reply_text(message)
 
-# الرد على ضغط زر الإحالة
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user = query.from_user
-    link = f"https://t.me/{BOT_USERNAME}?start={user.id}"
-    await handle_flood_control(
-        query.message.reply_text,
-        f"رابط الإحالة الخاص بك:\n{link}"
-    )
-
-# تشغيل البوت
-if __name__ == '__main__':
+async def main():
     init_db()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("referral_link", referral_link))
     app.add_handler(CommandHandler("top_referrals", top_referrals))
-    app.add_handler(CommandHandler("top", top_referrals))  # اختصار
+    await app.run_polling()
 
-    from telegram.ext import CallbackQueryHandler
-    app.add_handler(CallbackQueryHandler(button_handler))
-
-    print("Bot is running...")
-    app.run_polling()
+if __name__ == '__main__':
+    asyncio.run(main())
