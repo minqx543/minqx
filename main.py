@@ -27,7 +27,7 @@ referrals = {
 
 # دالة لعرض روابط المنصات
 async def show_platform_links(update: Update, context: CallbackContext):
-    message = "روابط المنصات:\n\n"
+    message = "🌐 روابط المنصات:\n\n"
     for platform, link in platform_links.items():
         message += f"{platform}: {link}\n"
     await update.message.reply_text(message)
@@ -36,11 +36,11 @@ async def show_platform_links(update: Update, context: CallbackContext):
 async def send_referral_link(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
     referral_link = f'http://t.me/MissionxX_bot?start={user_id}'
-    await update.message.reply_text(f"رابطك المخصص: {referral_link}")
+    await update.message.reply_text(f"🔗 رابطك المخصص: {referral_link}")
 
 # دالة لعرض أول 10 إحالات
 async def show_top_referrals(update: Update, context: CallbackContext):
-    message = "أول 10 إحالات:\n\n"
+    message = "🏆 أول 10 إحالات:\n\n"
     sorted_referrals = sorted(referrals.items(), key=lambda x: x[1]['referrals_count'], reverse=True)
     for rank, (key, value) in enumerate(sorted_referrals[:10], start=1):
         message += f"{rank}. {value['user']} - {value['referrals_count']} إحالات\n"
@@ -49,7 +49,7 @@ async def show_top_referrals(update: Update, context: CallbackContext):
 async def main():
     # أدخل التوكن الخاص بك هنا
     application = Application.builder().token("YOUR_BOT_TOKEN").build()
-    
+
     # إضافة الأوامر
     application.add_handler(CommandHandler('platforms', show_platform_links))  # أمر لعرض روابط المنصات
     application.add_handler(CommandHandler('referral_link', send_referral_link))  # أمر لإرسال الرابط المخصص للاعب
