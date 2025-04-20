@@ -73,7 +73,9 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
         else:
             rank = f"#{idx}"
 
-        message += f"{rank} المستخدم {user_id} - {total} إحالة\n"
+        # جلب اسم المستخدم
+        user_name = (await update.bot.get_chat(user_id)).first_name
+        message += f"{rank} {user_name} - {total} إحالة\n"
 
     await update.message.reply_text(message)
 
