@@ -82,7 +82,7 @@ async def referral(update: Update, context: CallbackContext) -> None:
     logger.info(f"مستخدم {user_id} ({user.first_name}) طلب رابط الإحالة")
     await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_link}")
 
-# دالة عرض المتصدرين
+# دالة عرض المتصدرين (المعدلة)
 async def leaderboard(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     logger.info(f"مستخدم {user.id} طلب لوحة المتصدرين")
@@ -114,7 +114,10 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
                 rank = f"#{idx}"
 
             try:
-                user_name = (await update.bot.get_chat(user_id)).first_name
+                # جلب معلومات المستخدم من التليجرام
+                user = await context.bot.get_chat(user_id)
+                # عرض اسم المستخدم مع @username إن وجد
+                user_name = f"@{user.username}" if user.username else user.first_name
                 message += f"{rank} {user_name} - {total} إحالة\n"
                 logger.debug(f"تمت معالجة متصدر #{idx}: {user_id} ({user_name})")
             except Exception as e:
@@ -146,7 +149,17 @@ async def handle_referral(update: Update, context: CallbackContext) -> None:
                                   (referrer_id, user_id))
                     conn.commit()
                     logger.info(f"تم تسجيل إحالة جديدة: {referrer_id} أحال {user_id}")
-                    await update.message.reply_text(f"شكراً لتسجيلك عبر إحالة المستخدم #{referrer_id}!")
+                    
+                    # إرسال إشعار للمُحيل
+                    try:
+                        await context.bot.send_message(
+                            chat_id=referrer_id,
+                            text=f"🎉 تم تسجيل إحالة جديدة بواسطة {user.first_name}!"
+                        )
+                    except Exception as e:
+                        logger.warning(f"لا يمكن إرسال إشعار للمحيل: {e}")
+                    
+                    await update.message.reply_text(f"شكراً لتسجيلك عبر إحالة المستخدم @{context.bot.get_chat(referrer_id).username if context.bot.get_chat(referrer_id).username else referrer_id}!")
                 else:
                     logger.info(f"إحالة مكررة: {referrer_id} -> {user_id}")
         except ValueError:
