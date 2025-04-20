@@ -1,9 +1,11 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
-import sqlite3
 import os
 import logging
 from datetime import datetime
+import psycopg2
+from urllib.parse import urlparse
+import asyncio
 
 # إعداد نظام التسجيل (Logging)
 logging.basicConfig(
@@ -12,44 +14,59 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# إنشاء قاعدة بيانات SQLite لتخزين المهام والإحالات
-try:
-    # استخدام مسار مطلق لملف قاعدة البيانات
-    db_path = os.path.join(os.getcwd(), 'tasks.db')
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    logger.info("تم الاتصال بنجاح بقاعدة البيانات SQLite")
+# اتصال قاعدة البيانات PostgreSQL
+def get_db_connection():
+    try:
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        result = urlparse(DATABASE_URL)
+        conn = psycopg2.connect(
+            database=result.path[1:],
+            user=result.username,
+            password=result.password,
+            host=result.hostname,
+            port=result.port,
+            sslmode='require'
+        )
+        return conn
+    except Exception as e:
+        logger.error(f"خطأ في الاتصال بقاعدة البيانات: {str(e)}")
+        raise
 
-    # إنشاء الجداول مع بناء جملة SQL محسّن
-    create_tasks_table = """
-    CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        task_name TEXT NOT NULL,
-        completed INTEGER DEFAULT 0
-    )
-    """
-    
-    create_referrals_table = """
-    CREATE TABLE IF NOT EXISTS referrals (
-        referrer_id INTEGER NOT NULL,
-        referred_id INTEGER NOT NULL,
-        referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (referrer_id, referred_id)
-    )
-    """
-    
-    cursor.execute(create_tasks_table)
-    logger.info("تم إنشاء/التحقق من جدول المهام بنجاح")
-    
-    cursor.execute(create_referrals_table)
-    logger.info("تم إنشاء/التحقق من جدول الإحالات بنجاح")
-    
-    conn.commit()
-    
-except sqlite3.Error as e:
-    logger.error(f"خطأ في قاعدة البيانات: {str(e)}")
-    raise
+# تهيئة الجداول
+def init_db():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                task_name TEXT NOT NULL,
+                completed INTEGER DEFAULT 0
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                referrer_id INTEGER NOT NULL,
+                referred_id INTEGER NOT NULL,
+                referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (referrer_id, referred_id)
+            )
+        """)
+        
+        conn.commit()
+        logger.info("تم تهيئة الجداول بنجاح")
+    except Exception as e:
+        logger.error(f"خطأ في تهيئة الجداول: {str(e)}")
+        raise
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+# استدعاء تهيئة قاعدة البيانات عند التشغيل
+init_db()
 
 # دالة /start
 async def start(update: Update, context: CallbackContext) -> None:
@@ -82,12 +99,15 @@ async def referral(update: Update, context: CallbackContext) -> None:
     logger.info(f"مستخدم {user_id} ({user.first_name}) طلب رابط الإحالة")
     await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_link}")
 
-# دالة عرض المتصدرين (المعدلة)
+# دالة عرض المتصدرين
 async def leaderboard(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     logger.info(f"مستخدم {user.id} طلب لوحة المتصدرين")
     
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
         cursor.execute('''
             SELECT referrer_id, COUNT(*) as total 
             FROM referrals 
@@ -114,21 +134,20 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
                 rank = f"#{idx}"
 
             try:
-                # جلب معلومات المستخدم من التليجرام
                 user = await context.bot.get_chat(user_id)
-                # عرض اسم المستخدم مع @username إن وجد
                 user_name = f"@{user.username}" if user.username else user.first_name
                 message += f"{rank} {user_name} - {total} إحالة\n"
-                logger.debug(f"تمت معالجة متصدر #{idx}: {user_id} ({user_name})")
             except Exception as e:
                 logger.warning(f"خطأ في جلب معلومات المستخدم {user_id}: {e}")
                 message += f"{rank} مستخدم #{user_id} - {total} إحالة\n"
 
-        logger.info("تم إنشاء لوحة المتصدرين بنجاح")
         await update.message.reply_text(message)
     except Exception as e:
         logger.error(f"خطأ في جلب لوحة المتصدرين: {e}")
         await update.message.reply_text("حدث خطأ أثناء جلب لوحة المتصدرين.")
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 # دالة إضافة إحالة تلقائياً عند البدء بالرابط
 async def handle_referral(update: Update, context: CallbackContext) -> None:
@@ -140,17 +159,19 @@ async def handle_referral(update: Update, context: CallbackContext) -> None:
 
     if args:
         try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
             referrer_id = int(args[0])
             if referrer_id != user_id:
-                cursor.execute("SELECT * FROM referrals WHERE referrer_id = ? AND referred_id = ?", 
+                cursor.execute("SELECT * FROM referrals WHERE referrer_id = %s AND referred_id = %s", 
                              (referrer_id, user_id))
                 if not cursor.fetchone():
-                    cursor.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)", 
+                    cursor.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (%s, %s)", 
                                   (referrer_id, user_id))
                     conn.commit()
                     logger.info(f"تم تسجيل إحالة جديدة: {referrer_id} أحال {user_id}")
                     
-                    # إرسال إشعار للمُحيل
                     try:
                         await context.bot.send_message(
                             chat_id=referrer_id,
@@ -159,13 +180,22 @@ async def handle_referral(update: Update, context: CallbackContext) -> None:
                     except Exception as e:
                         logger.warning(f"لا يمكن إرسال إشعار للمحيل: {e}")
                     
-                    await update.message.reply_text(f"شكراً لتسجيلك عبر إحالة المستخدم @{context.bot.get_chat(referrer_id).username if context.bot.get_chat(referrer_id).username else referrer_id}!")
+                    try:
+                        referred_user = await context.bot.get_chat(referrer_id)
+                        username = f"@{referred_user.username}" if referred_user.username else str(referrer_id)
+                        await update.message.reply_text(f"شكراً لتسجيلك عبر إحالة المستخدم {username}!")
+                    except Exception as e:
+                        logger.warning(f"خطأ في جلب معلومات المحيل: {e}")
+                        await update.message.reply_text(f"شكراً لتسجيلك عبر إحالة المستخدم #{referrer_id}!")
                 else:
                     logger.info(f"إحالة مكررة: {referrer_id} -> {user_id}")
         except ValueError:
             logger.warning(f"معرف إحالة غير صالح: {args[0]}")
         except Exception as e:
             logger.error(f"خطأ في معالجة الإحالة: {e}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
 
     await start(update, context)
 
@@ -190,15 +220,9 @@ def main():
     except Exception as e:
         logger.critical(f"خطأ فادح في تشغيل البوت: {e}")
         raise
-    finally:
-        if 'conn' in locals():
-            conn.close()
-            logger.info("تم إغلاق اتصال قاعدة البيانات")
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         logger.error(f"انتهى البوت بسبب خطأ: {e}")
-        if 'conn' in locals():
-            conn.close()
