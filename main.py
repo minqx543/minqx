@@ -14,33 +14,41 @@ logger = logging.getLogger(__name__)
 
 # إنشاء قاعدة بيانات SQLite لتخزين المهام والإحالات
 try:
-    conn = sqlite3.connect('tasks.db')
+    # استخدام مسار مطلق لملف قاعدة البيانات
+    db_path = os.path.join(os.getcwd(), 'tasks.db')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     logger.info("تم الاتصال بنجاح بقاعدة البيانات SQLite")
 
-    # إذا لم تكن الجداول موجودة، قم بإنشائها
-    cursor.execute('''
+    # إنشاء الجداول مع بناء جملة SQL محسّن
+    create_tasks_table = """
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        task_name TEXT,
-        completed INTEGER
+        user_id INTEGER NOT NULL,
+        task_name TEXT NOT NULL,
+        completed INTEGER DEFAULT 0
     )
-    ''')
-    logger.info("تم التحقق من جدول المهام/إنشائه")
-
-    cursor.execute('''
+    """
+    
+    create_referrals_table = """
     CREATE TABLE IF NOT EXISTS referrals (
-        referrer_id INTEGER,
-        referred_id INTEGER,
+        referrer_id INTEGER NOT NULL,
+        referred_id INTEGER NOT NULL,
         referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (referrer_id, referred_id)
-    ''')
-    logger.info("تم التحقق من جدول الإحالات/إنشائه")
-
+    )
+    """
+    
+    cursor.execute(create_tasks_table)
+    logger.info("تم إنشاء/التحقق من جدول المهام بنجاح")
+    
+    cursor.execute(create_referrals_table)
+    logger.info("تم إنشاء/التحقق من جدول الإحالات بنجاح")
+    
     conn.commit()
+    
 except sqlite3.Error as e:
-    logger.error(f"خطأ في قاعدة البيانات: {e}")
+    logger.error(f"خطأ في قاعدة البيانات: {str(e)}")
     raise
 
 # دالة /start
@@ -169,10 +177,15 @@ def main():
     except Exception as e:
         logger.critical(f"خطأ فادح في تشغيل البوت: {e}")
         raise
+    finally:
+        if 'conn' in locals():
+            conn.close()
+            logger.info("تم إغلاق اتصال قاعدة البيانات")
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         logger.error(f"انتهى البوت بسبب خطأ: {e}")
-        conn.close()
+        if 'conn' in locals():
+            conn.close()
