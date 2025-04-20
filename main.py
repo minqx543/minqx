@@ -1,20 +1,42 @@
 import logging
 import asyncio
 import os
-from telegram import BotCommand
-from telegram.ext import ApplicationBuilder
-
-# استيراد الأوامر من ملف handlers
-from handlers.start import start_handler
-from handlers.referral import referral_handler
-from handlers.leaderboard import leaderboard_handler
-from handlers.links import links_handler
+from telegram import Update, BotCommand
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # إعداد سجل الأخطاء
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+# دوال الأوامر
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("مرحباً بك في البوت! 🎉")
+
+async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    referral_link = f"https://t.me/{context.bot.username}?start={user_id}"
+    await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_link}")
+
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # هذه مجرد بيانات تجريبية
+    top_referrals = [
+        ("user1", 15),
+        ("user2", 12),
+        ("user3", 10)
+    ]
+    message = "🏆 أفضل المحيلين:\n"
+    for i, (user, count) in enumerate(top_referrals, 1):
+        message += f"{i}. {user} - {count} إحالة\n"
+    await update.message.reply_text(message)
+
+async def links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = "📎 روابط المنصات:\n"
+    message += "🔗 منصة 1: https://example.com/1\n"
+    message += "🔗 منصة 2: https://example.com/2\n"
+    await update.message.reply_text(message)
 
 # الدالة الرئيسية لتشغيل البوت
 async def main():
@@ -24,13 +46,13 @@ async def main():
 
     application = ApplicationBuilder().token(token).build()
 
-    # إضافة الهاندلرز (الأوامر)
-    application.add_handler(start_handler)
-    application.add_handler(referral_handler)
-    application.add_handler(leaderboard_handler)
-    application.add_handler(links_handler)
+    # إضافة الهاندلرز
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("referral", referral))
+    application.add_handler(CommandHandler("leaderboard", leaderboard))
+    application.add_handler(CommandHandler("links", links))
 
-    # تعيين أوامر البوت في واجهة Telegram
+    # تعيين أوامر البوت
     commands = [
         BotCommand("start", "بدء استخدام البوت"),
         BotCommand("referral", "رابط الإحالة الخاص بك"),
@@ -39,7 +61,6 @@ async def main():
     ]
     await application.bot.set_my_commands(commands)
 
-    # تشغيل البوت باستخدام polling (لا نحتاج لمنفذ)
     await application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
