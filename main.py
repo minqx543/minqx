@@ -44,42 +44,58 @@ async def links(update: Update, context: CallbackContext) -> None:
 # دالة عرض رابط الإحالة
 async def referral(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
-    referral_link = f"https://t.me/{context.bot.username}?start={user_id}"
-    await update.message.reply_text(f"🔗 رابط الإحالة الخاص بك:\n{referral_link}")
+    referral_link = f"https://t.me/MissionxX_bot?start={user_id}"
+    await update.message.reply_text(f"رابط الإحالة الخاص بك:\n{referral_link}")
 
-# دالة عرض قائمة المتصدرين
+# دالة عرض المتصدرين مع عرض اسم المستخدم
 async def leaderboard(update: Update, context: CallbackContext) -> None:
     cursor.execute('''
-    SELECT user_id, COUNT(*) as completed_tasks 
-    FROM tasks 
-    WHERE completed = 1 
-    GROUP BY user_id 
-    ORDER BY completed_tasks DESC 
-    LIMIT 10
+        SELECT referrer_id, COUNT(*) as total 
+        FROM referrals 
+        GROUP BY referrer_id 
+        ORDER BY total DESC 
+        LIMIT 10
     ''')
-    top_users = cursor.fetchall()
+    top_referrers = cursor.fetchall()
 
-    if not top_users:
-        await update.message.reply_text("لا يوجد متصدرون بعد.")
+    if not top_referrers:
+        await update.message.reply_text("لا يوجد إحالات بعد.")
         return
 
-    leaderboard_text = "🏆 قائمة أفضل 10 مستخدمين:\n"
-    for rank, (user_id, completed_tasks) in enumerate(top_users, start=1):
+    message = "🏆 قائمة المتصدرين:\n"
+    for idx, (user_id, total) in enumerate(top_referrers, start=1):
         try:
             user = await context.bot.get_chat(user_id)
             name = user.username or user.first_name or f"مستخدم {user_id}"
         except:
             name = f"مستخدم {user_id}"
-        leaderboard_text += f"{rank}. {name} - {completed_tasks} مهمة مكتملة\n"
+        message += f"{idx}. {name} - {total} إحالة\n"
 
-    await update.message.reply_text(leaderboard_text)
+    await update.message.reply_text(message)
+
+# دالة إضافة إحالة تلقائياً عند البدء بالرابط
+async def handle_referral(update: Update, context: CallbackContext) -> None:
+    user_id = update.effective_user.id
+    args = context.args
+
+    if args:
+        try:
+            referrer_id = int(args[0])
+            if referrer_id != user_id:
+                cursor.execute("SELECT * FROM referrals WHERE referrer_id = ? AND referred_id = ?", (referrer_id, user_id))
+                if not cursor.fetchone():
+                    cursor.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)", (referrer_id, user_id))
+                    conn.commit()
+        except:
+            pass
+    await start(update, context)
 
 # تشغيل البوت
-def main() -> None:
+def main():
     TOKEN = os.getenv("BOT_TOKEN")
     application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("start", handle_referral))
     application.add_handler(CommandHandler("links", links))
     application.add_handler(CommandHandler("referral", referral))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
