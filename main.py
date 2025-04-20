@@ -65,8 +65,35 @@ def init_db():
 # تهيئة قاعدة البيانات عند التشغيل
 init_db()
 
+async def start(update: Update, context: CallbackContext) -> None:
+    """معالجة أمر /start"""
+    user = update.effective_user
+    logger.info(f"مستخدم {user.id} ({user.first_name}) قام بتشغيل البوت")
+    
+    # تسجيل المستخدم في قاعدة البيانات
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR IGNORE INTO users (user_id, username, first_name, last_name)
+                VALUES (?, ?, ?, ?)
+            """, (user.id, user.username, user.first_name, user.last_name))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل المستخدم: {e}")
+    
+    welcome_message = (
+        "مرحباً بك في بوت MissionX! 🚀\n\n"
+        "الأوامر المتاحة:\n"
+        "/links - روابط منصاتنا الرسمية\n"
+        "/referral - الحصول على رابط الإحالة الخاص بك\n"
+        "/leaderboard - عرض قائمة المتصدرين في الإحالات\n"
+        "/help - عرض المساعدة"
+    )
+    await update.message.reply_text(welcome_message)
+
 async def leaderboard(update: Update, context: CallbackContext) -> None:
-    """لوحة المتصدرين مع الاستعلام الصحيح"""
+    """لوحة المتصدرين مع عرض الأسماء بدلاً من الأرقام"""
     user = update.effective_user
     logger.info(f"طلب لوحة المتصدرين من المستخدم {user.id}")
     
@@ -74,43 +101,43 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # الاستعلام المعدل باستخدام الأسماء الصحيحة للأعمدة
+            # استعلام لجلب أفضل 10 محيلين مع أسمائهم
             cursor.execute('''
                 SELECT 
-                    r.referred_by as referrer_id,
+                    u.user_id,
                     u.username,
                     u.first_name,
-                    COUNT(*) as total 
-                FROM referrals r
-                LEFT JOIN users u ON r.referred_by = u.user_id
-                GROUP BY r.referred_by
-                ORDER BY total DESC 
+                    COUNT(r.referred_user_id) as referral_count
+                FROM users u
+                JOIN referrals r ON u.user_id = r.referred_by
+                GROUP BY u.user_id
+                ORDER BY referral_count DESC
                 LIMIT 10
             ''')
             
-            top_referrers = cursor.fetchall()
+            leaders = cursor.fetchall()
             
-            if not top_referrers:
-                await update.message.reply_text("لا توجد إحالات بعد. كن أول من يجلب أعضاء جدد!")
+            if not leaders:
+                await update.message.reply_text("🏆 لوحة المتصدرين فارغة حالياً!")
                 return
 
-            message = "🏆 <b>قائمة المتصدرين في الإحالات</b> 🏆\n\n"
-            for idx, row in enumerate(top_referrers, start=1):
-                rank_emoji = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx}"
-                username = f"@{row['username']}" if row['username'] else row['first_name'] or f"المستخدم #{row['referrer_id']}"
+            message = "🏆 <b>أفضل 10 أعضاء في الإحالات</b> 🏆\n\n"
+            for idx, leader in enumerate(leaders, start=1):
+                # عرض الاسم بأفضل صورة متاحة
+                display_name = f"@{leader['username']}" if leader['username'] else leader['first_name'] or f"المستخدم {leader['user_id']}"
                 
-                message += f"{rank_emoji} {username} - {row['total']} إحالة\n"
+                message += f"{get_rank_emoji(idx)} {display_name} - {leader['referral_count']} إحالة\n"
             
-            # إضافة ترتيب المستخدم الحالي
+            # إضافة ترتيب المستخدم الحالي إذا لم يكن في القائمة
             cursor.execute('''
-                SELECT COUNT(*) as user_total 
+                SELECT COUNT(*) as user_count 
                 FROM referrals 
                 WHERE referred_by = ?
             ''', (user.id,))
             
-            user_total = cursor.fetchone()['user_total']
-            if user_total > 0 and not any(row['referrer_id'] == user.id for row in top_referrers):
-                message += f"\n🔹 ترتيبك: {user_total} إحالة"
+            user_count = cursor.fetchone()['user_count'] or 0
+            if user_count > 0:
+                message += f"\n📊 <b>ترتيبك الحالي:</b> {user_count} إحالة"
             
             await update.message.reply_text(message, parse_mode='HTML')
             
@@ -120,6 +147,14 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
     except Exception as e:
         logger.error(f"خطأ غير متوقع: {e}")
         await update.message.reply_text("حدث خطأ غير متوقع. يرجى إبلاغ الإدارة.")
+
+def get_rank_emoji(rank: int) -> str:
+    """إرجاع إيموجي حسب الترتيب"""
+    return {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉"
+    }.get(rank, f"#{rank}")
 
 async def handle_referral(update: Update, context: CallbackContext) -> None:
     """معالجة الإحالات مع التعديلات اللازمة"""
@@ -193,32 +228,45 @@ def get_user_display_name(user_id: int) -> str:
                 WHERE user_id = ?
             """, (user_id,))
             user = cursor.fetchone()
-            return f"@{user['username']}" if user and user['username'] else f"المستخدم #{user_id}"
+            
+            if user:
+                if user['username']:
+                    return f"@{user['username']}"
+                elif user['first_name']:
+                    return user['first_name']
+            return f"المستخدم #{user_id}"
     except Exception as e:
-        logger.error(f"خطأ في جلب اسم المستخدم: {e}")
+        logger.error(f"خطأ في جلب اسم العرض للمستخدم {user_id}: {e}")
         return f"المستخدم #{user_id}"
 
-# ... (بقية الدوال تبقى كما هي)
+async def links(update: Update, context: CallbackContext) -> None:
+    """عرض روابط المنصات"""
+    user = update.effective_user
+    logger.info(f"مستخدم {user.id} طلب روابط المنصات")
+    
+    platform_links = (
+        "🌐 <b>روابطنا الرسمية:</b>\n\n"
+        "🔹 <a href='https://t.me/MissionX_offici'>قناة التليجرام</a>\n"
+        "🔹 <a href='https://youtube.com/@missionx_offici'>يوتيوب</a>\n"
+        "🔹 <a href='https://www.tiktok.com/@missionx_offici'>تيك توك</a>\n"
+        "🔹 <a href='https://x.com/MissionX_Offici'>تويتر (X)</a>\n"
+        "🔹 <a href='https://www.facebook.com/share/19AMU41hhs/'>فيسبوك</a>\n"
+        "🔹 <a href='https://www.instagram.com/missionx_offici'>إنستجرام</a>\n\n"
+        "تابعنا على جميع المنصات لمزيد من المحتوى الحصري!"
+    )
+    await update.message.reply_text(platform_links, 
+                                  disable_web_page_preview=True,
+                                  parse_mode='HTML')
 
-def main():
-    """تشغيل البوت"""
-    TOKEN = os.getenv("BOT_TOKEN")
-    if not TOKEN:
-        logger.critical("لم يتم تعيين BOT_TOKEN!")
-        return
-
-    try:
-        app = Application.builder().token(TOKEN).build()
-        
-        app.add_handler(CommandHandler("start", handle_referral))
-        app.add_handler(CommandHandler("leaderboard", leaderboard))
-        # ... (إضافة بقية المعالجات)
-        
-        logger.info("بدأ البوت في الاستماع للتحديثات...")
-        app.run_polling()
-        
-    except Exception as e:
-        logger.critical(f"تعطل البوت: {e}")
-
-if __name__ == "__main__":
-    main()
+async def referral(update: Update, context: CallbackContext) -> None:
+    """إنشاء وعرض رابط الإحالة"""
+    user = update.effective_user
+    referral_link = f"https://t.me/MissionxX_bot?start={user.id}"
+    
+    logger.info(f"مستخدم {user.id} طلب رابط الإحالة")
+    
+    referral_message = (
+        "🎯 <b>رابط الإحالة الخاص بك:</b>\n\n"
+        f"<code>{referral_link}</code>\n\n"
+        "شارك هذا الرابط مع أصدقائك واحصل على نقاط عند انضمامهم!\n"
+        "كلما أحلت المزيد من الأصدق
