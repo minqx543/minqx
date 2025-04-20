@@ -105,4 +105,10 @@ async def main():
     await app.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())  # هذا يعمل فقط إذا لم تكن هناك حلقة حدث أخرى قيد التشغيل
+    except RuntimeError as e:
+        if str(e) == 'This event loop is already running':
+            # التعامل مع الحالة عندما تكون حلقة الحدث تعمل بالفعل
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())  # إضافة مهمة إلى الحلقة الموجودة
