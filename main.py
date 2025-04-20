@@ -79,7 +79,7 @@ async def start(update: Update, context: CallbackContext):
     tasks = load_tasks()
     task_text = "✅ *مهام اليوم:*\n"
     for task in tasks:
-        task_text += f"\n- {task['title']}: [اضغط هنا]({task['url']})"
+        task_text += f"\n- {task['type'].replace('_', ' ').capitalize()}: [اضغط هنا]({task['link']}) - مكافأة: {task['reward']} نقاط"
 
     # إرسال رابط الإحالة
     referral_link = f"https://t.me/{context.bot.username}?start={user.id}"
