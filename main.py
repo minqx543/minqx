@@ -87,7 +87,7 @@ async def links(update: Update, context: CallbackContext) -> None:
         "🔹 <a href='https://youtube.com/@missionx_offici'>يوتيوب</a>\n"
         "🔹 <a href='https://www.tiktok.com/@missionx_offici'>تيك توك</a>\n"
         "🔹 <a href='https://x.com/MissionX_Offici'>تويتر (X)</a>\n"
-        "🔹 <a href='https://www.facebook.com/share/19AMU41hhs/'>فيسبوك</a>\n"
+        "🔹 <a href='https://www.facebook.com/share/16VEzK6nF3//'>فيسبوك</a>\n"
         "🔹 <a href='https://www.instagram.com/missionx_offici'>إنستجرام</a>",
         parse_mode='HTML',
         disable_web_page_preview=True
