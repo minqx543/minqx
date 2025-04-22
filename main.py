@@ -186,6 +186,9 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
             cursor.execute('''
                 SELECT 
                     u.user_id,
+                    u.username,
+                    u.first_name,
+                    u.last_name,
                     COUNT(r.id) as referral_count
                 FROM referrals r
                 JOIN users u ON u.user_id = r.referred_by
@@ -202,8 +205,9 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
 
             message = "🏆 <b>أفضل 10 أعضاء في الإحالات</b> 🏆\n\n"
             for idx, leader in enumerate(leaders, 1):
-                user_name = await get_user_display_name(leader['user_id'])
-                message += f"{get_rank_emoji(idx)} {user_name} - {leader['referral_count']} إحالة\n"
+                # بناء الاسم المعروض
+                display_name = await get_user_display_name(leader['user_id'])
+                message += f"{get_rank_emoji(idx)} {display_name} - {leader['referral_count']} إحالة\n"
             
             await update.message.reply_text(message, parse_mode='HTML')
             
@@ -247,9 +251,8 @@ def main():
     try:
         app = Application.builder().token(TOKEN).build()
         
-        # تسجيل جميع المعالجات (تأكد من استخدام نفس أسماء الدوال)
         app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("links", links))  # هنا يجب أن تكون 'links' وليس 'روابط'
+        app.add_handler(CommandHandler("links", links))
         app.add_handler(CommandHandler("referral", referral))
         app.add_handler(CommandHandler("leaderboard", leaderboard))
         app.add_handler(CommandHandler("help", help_command))
