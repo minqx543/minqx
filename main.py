@@ -35,7 +35,6 @@ def init_db():
     """تهيئة الجداول مع تحسينات"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # جدول المستخدمين مع تحسينات
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -46,7 +45,6 @@ def init_db():
                 last_active TIMESTAMP
             )
         """)
-        # جدول الإحالات مع تحسينات
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS referrals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +56,6 @@ def init_db():
                 FOREIGN KEY (referred_user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         """)
-        # إنشاء فهارس لتحسين الأداء
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_referred_by ON referrals(referred_by)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_referred_user ON referrals(referred_user_id)")
         conn.commit()
@@ -79,12 +76,27 @@ async def update_user_activity(user_id: int):
     except Exception as e:
         logger.error(f"خطأ في تحديث نشاط المستخدم: {e}")
 
+async def get_user_display_name(user_id: int) -> str:
+    """الحصول على اسم مستخدم للعرض"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT username, first_name, last_name FROM users WHERE user_id = ?", (user_id,))
+            user = cursor.fetchone()
+            if user:
+                if user['username']:
+                    return f"@{user['username']}"
+                full_name = f"{user['first_name'] or ''} {user['last_name'] or ''}".strip()
+                return full_name if full_name else f"المستخدم {user_id}"
+    except Exception as e:
+        logger.error(f"خطأ في جلب اسم المستخدم: {e}")
+    return f"المستخدم {user_id}"
+
 async def start(update: Update, context: CallbackContext) -> None:
     """معالجة أمر /start مع دعم الإحالات"""
     user = update.effective_user
     try:
         with get_db_connection() as conn:
-            # تسجيل أو تحديث بيانات المستخدم
             conn.execute("""
                 INSERT INTO users (user_id, username, first_name, last_name, last_active)
                 VALUES (?, ?, ?, ?, ?)
@@ -95,7 +107,6 @@ async def start(update: Update, context: CallbackContext) -> None:
                 last_active=excluded.last_active
             """, (user.id, user.username, user.first_name, user.last_name, datetime.now()))
             
-            # معالجة الإحالة إذا وجدت
             if context.args and context.args[0].isdigit():
                 referrer_id = int(context.args[0])
                 if referrer_id != user.id:
@@ -110,7 +121,6 @@ async def start(update: Update, context: CallbackContext) -> None:
                             f"شكراً لتسجيلك عبر إحالة {referrer_name}! 🎉\n"
                             f"تم تسجيل إحالتك بنجاح."
                         )
-                        logger.info(f"تم تسجيل إحالة جديدة: {referrer_id} -> {user.id}")
                     except sqlite3.Error as e:
                         logger.error(f"خطأ في تسجيل الإحالة: {e}")
         
@@ -176,8 +186,6 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
             cursor.execute('''
                 SELECT 
                     u.user_id,
-                    u.username,
-                    u.first_name,
                     COUNT(r.id) as referral_count
                 FROM referrals r
                 JOIN users u ON u.user_id = r.referred_by
@@ -194,10 +202,9 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
 
             message = "🏆 <b>أفضل 10 أعضاء في الإحالات</b> 🏆\n\n"
             for idx, leader in enumerate(leaders, 1):
-                name = f"@{leader['username']}" if leader['username'] else leader['first_name'] or f"المستخدم {leader['user_id']}"
-                message += f"{get_rank_emoji(idx)} {name} - {leader['referral_count']} إحالة\n"
+                user_name = await get_user_display_name(leader['user_id'])
+                message += f"{get_rank_emoji(idx)} {user_name} - {leader['referral_count']} إحالة\n"
             
-            message += "\nاستخدم /referral للحصول على رابط إحالتك!"
             await update.message.reply_text(message, parse_mode='HTML')
             
     except Exception as e:
@@ -211,22 +218,6 @@ def get_rank_emoji(rank: int) -> str:
         2: "🥈",
         3: "🥉"
     }.get(rank, f"#{rank}")
-
-async def get_user_display_name(user_id: int) -> str:
-    """الحصول على اسم مستخدم للعرض"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT username, first_name, last_name FROM users WHERE user_id = ?", (user_id,))
-            user = cursor.fetchone()
-            if user:
-                if user['username']:
-                    return f"@{user['username']}"
-                name = f"{user['first_name'] or ''} {user['last_name'] or ''}".strip()
-                return name if name else f"المستخدم {user_id}"
-    except Exception as e:
-        logger.error(f"خطأ في جلب اسم المستخدم: {e}")
-    return f"المستخدم {user_id}"
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     """عرض رسالة المساعدة"""
@@ -256,7 +247,6 @@ def main():
     try:
         app = Application.builder().token(TOKEN).build()
         
-        # تسجيل جميع المعالجات
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("links", links))
         app.add_handler(CommandHandler("referral", referral))
