@@ -65,6 +65,20 @@ def init_db():
 
 init_db()
 
+async def update_user_activity(user_id: int):
+    """تحديث نشاط المستخدم"""
+    try:
+        with get_db_connection() as conn:
+            conn.execute("""
+                INSERT OR IGNORE INTO users (user_id, last_active)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                last_active=excluded.last_active
+            """, (user_id, datetime.now()))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"خطأ في تحديث نشاط المستخدم: {e}")
+
 async def start(update: Update, context: CallbackContext) -> None:
     """معالجة أمر /start مع دعم الإحالات"""
     user = update.effective_user
@@ -91,11 +105,12 @@ async def start(update: Update, context: CallbackContext) -> None:
                             VALUES (?, ?)
                         """, (referrer_id, user.id))
                         conn.commit()
-                        referrer_name = get_user_display_name(referrer_id)
+                        referrer_name = await get_user_display_name(referrer_id)
                         await update.message.reply_text(
                             f"شكراً لتسجيلك عبر إحالة {referrer_name}! 🎉\n"
                             f"تم تسجيل إحالتك بنجاح."
                         )
+                        logger.info(f"تم تسجيل إحالة جديدة: {referrer_id} -> {user.id}")
                     except sqlite3.Error as e:
                         logger.error(f"خطأ في تسجيل الإحالة: {e}")
         
@@ -114,6 +129,7 @@ async def start(update: Update, context: CallbackContext) -> None:
 
 async def links(update: Update, context: CallbackContext) -> None:
     """عرض روابط المنصات"""
+    await update_user_activity(update.effective_user.id)
     await update.message.reply_text(
         "🌐 <b>روابطنا الرسمية:</b>\n\n"
         "🔹 <a href='https://t.me/MissionX_offici'>قناة التليجرام</a>\n"
@@ -128,6 +144,7 @@ async def links(update: Update, context: CallbackContext) -> None:
 
 async def referral(update: Update, context: CallbackContext) -> None:
     """إنشاء وعرض رابط الإحالة"""
+    await update_user_activity(update.effective_user.id)
     user = update.effective_user
     referral_link = f"https://t.me/MissionxX_bot?start={user.id}"
     
@@ -137,7 +154,8 @@ async def referral(update: Update, context: CallbackContext) -> None:
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) as count FROM referrals WHERE referred_by = ?", (user.id,))
-            referral_count = cursor.fetchone()['count']
+            result = cursor.fetchone()
+            referral_count = result['count'] if result else 0
     except Exception as e:
         logger.error(f"خطأ في جلب عدد الإحالات: {e}")
     
@@ -151,6 +169,7 @@ async def referral(update: Update, context: CallbackContext) -> None:
 
 async def leaderboard(update: Update, context: CallbackContext) -> None:
     """عرض لوحة المتصدرين مع تحسينات"""
+    await update_user_activity(update.effective_user.id)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -160,10 +179,9 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
                     u.username,
                     u.first_name,
                     COUNT(r.id) as referral_count
-                FROM users u
-                LEFT JOIN referrals r ON u.user_id = r.referred_by
-                GROUP BY u.user_id
-                HAVING referral_count > 0
+                FROM referrals r
+                JOIN users u ON u.user_id = r.referred_by
+                GROUP BY r.referred_by
                 ORDER BY referral_count DESC
                 LIMIT 10
             ''')
@@ -194,21 +212,25 @@ def get_rank_emoji(rank: int) -> str:
         3: "🥉"
     }.get(rank, f"#{rank}")
 
-def get_user_display_name(user_id: int) -> str:
+async def get_user_display_name(user_id: int) -> str:
     """الحصول على اسم مستخدم للعرض"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT username, first_name FROM users WHERE user_id = ?", (user_id,))
+            cursor.execute("SELECT username, first_name, last_name FROM users WHERE user_id = ?", (user_id,))
             user = cursor.fetchone()
             if user:
-                return f"@{user['username']}" if user['username'] else user['first_name'] or f"المستخدم {user_id}"
+                if user['username']:
+                    return f"@{user['username']}"
+                name = f"{user['first_name'] or ''} {user['last_name'] or ''}".strip()
+                return name if name else f"المستخدم {user_id}"
     except Exception as e:
         logger.error(f"خطأ في جلب اسم المستخدم: {e}")
     return f"المستخدم {user_id}"
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     """عرض رسالة المساعدة"""
+    await update_user_activity(update.effective_user.id)
     await update.message.reply_text(
         "🆘 <b>مساعدة بوت MissionX</b>\n\n"
         "📌 <b>الأوامر المتاحة:</b>\n"
