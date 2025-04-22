@@ -247,8 +247,9 @@ def main():
     try:
         app = Application.builder().token(TOKEN).build()
         
+        # تسجيل جميع المعالجات (تأكد من استخدام نفس أسماء الدوال)
         app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("links", links))
+        app.add_handler(CommandHandler("links", links))  # هنا يجب أن تكون 'links' وليس 'روابط'
         app.add_handler(CommandHandler("referral", referral))
         app.add_handler(CommandHandler("leaderboard", leaderboard))
         app.add_handler(CommandHandler("help", help_command))
