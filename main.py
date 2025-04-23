@@ -177,9 +177,7 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
 
             message = "🏆 <b>أفضل 10 أعضاء في الإحالات</b> 🏆\n\n"
             for idx, leader in enumerate(leaders, 1):
-                # بناء اسم العرض بأفضل طريقة متاحة
-                display_name = get_user_display_name_from_row(leader)
-                
+                display_name = format_user_display(leader)
                 message += f"{get_rank_emoji(idx)} {display_name} - {leader['referral_count']} إحالة\n"
             
             message += "\nاستخدم /referral للحصول على رابط إحالتك!"
@@ -189,24 +187,21 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
         logger.error(f"خطأ في لوحة المتصدرين: {e}")
         await update.message.reply_text("حدث خطأ في جلب البيانات. حاول لاحقاً.")
 
-def get_user_display_name_from_row(user_row) -> str:
-    """الحصول على اسم مستخدم للعرض من صف قاعدة البيانات"""
+def format_user_display(user_row) -> str:
+    """تنسيق اسم المستخدم للعرض في لوحة المتصدرين"""
+    if user_row['username']:
+        return f"@{user_row['username']}"
+    
     name_parts = []
     if user_row['first_name']:
         name_parts.append(user_row['first_name'])
     if user_row['last_name']:
         name_parts.append(user_row['last_name'])
     
-    full_name = ' '.join(name_parts) if name_parts else None
+    if name_parts:
+        return ' '.join(name_parts)
     
-    if user_row['username']:
-        if full_name:
-            return f"@{user_row['username']} ({full_name})"
-        return f"@{user_row['username']}"
-    elif full_name:
-        return full_name
-    else:
-        return f"المستخدم {user_row['user_id']}"
+    return f"المستخدم {user_row['user_id']}"
 
 def get_rank_emoji(rank: int) -> str:
     """إرجاع إيموجي حسب الترتيب"""
@@ -224,7 +219,7 @@ def get_user_display_name(user_id: int) -> str:
             cursor.execute("SELECT user_id, username, first_name, last_name FROM users WHERE user_id = ?", (user_id,))
             user = cursor.fetchone()
             if user:
-                return get_user_display_name_from_row(user)
+                return format_user_display(user)
     except Exception as e:
         logger.error(f"خطأ في جلب اسم المستخدم: {e}")
     return f"المستخدم {user_id}"
