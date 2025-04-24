@@ -54,8 +54,8 @@ def init_db():
                 referred_user_id INTEGER NOT NULL,
                 referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(referred_by, referred_user_id),
-                FOREIGN KEY (referred_by) REFERENCES users(user_id) ON DELETE CASCADE,
-                FOREIGN KEY (referred_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                FOREIGN KEY (referred_by) REFERENCES users(user_id),
+                FOREIGN KEY (referred_user_id) REFERENCES users(user_id)
             )
         """)
         # إنشاء فهارس لتحسين الأداء
@@ -64,6 +64,33 @@ def init_db():
         conn.commit()
 
 init_db()
+
+def get_user_display_name_from_row(user_row) -> str:
+    """الحصول على اسم مستخدم للعرض من صف قاعدة البيانات"""
+    name_parts = []
+    if user_row['first_name']:
+        name_parts.append(user_row['first_name'])
+    if user_row['last_name']:
+        name_parts.append(user_row['last_name'])
+    
+    full_name = ' '.join(name_parts) if name_parts else None
+    
+    if user_row['username']:
+        if full_name:
+            return f"@{user_row['username']} ({full_name})"
+        return f"@{user_row['username']}"
+    elif full_name:
+        return full_name
+    else:
+        return f"المستخدم {user_row['user_id']}"
+
+def get_rank_emoji(rank: int) -> str:
+    """إرجاع إيموجي حسب الترتيب"""
+    return {
+        1: "🥇",
+        2: "🥈",
+        3: "🥉"
+    }.get(rank, f"#{rank}")
 
 async def start(update: Update, context: CallbackContext) -> None:
     """معالجة أمر /start مع دعم الإحالات"""
@@ -91,11 +118,13 @@ async def start(update: Update, context: CallbackContext) -> None:
                             VALUES (?, ?)
                         """, (referrer_id, user.id))
                         conn.commit()
-                        referrer_name = get_user_display_name(referrer_id)
-                        await update.message.reply_text(
-                            f"شكراً لتسجيلك عبر إحالة {referrer_name}! 🎉\n"
-                            f"تم تسجيل إحالتك بنجاح."
-                        )
+                        referrer = conn.execute("SELECT * FROM users WHERE user_id = ?", (referrer_id,)).fetchone()
+                        if referrer:
+                            referrer_name = get_user_display_name_from_row(referrer)
+                            await update.message.reply_text(
+                                f"شكراً لتسجيلك عبر إحالة {referrer_name}! 🎉\n"
+                                f"تم تسجيل إحالتك بنجاح."
+                            )
                     except sqlite3.Error as e:
                         logger.error(f"خطأ في تسجيل الإحالة: {e}")
         
@@ -129,7 +158,7 @@ async def links(update: Update, context: CallbackContext) -> None:
 async def referral(update: Update, context: CallbackContext) -> None:
     """إنشاء وعرض رابط الإحالة"""
     user = update.effective_user
-    referral_link = f"https://t.me/MissionxX_bot?start={user.id}"
+    referral_link = f"https://t.me/{context.bot.username}?start={user.id}"
     
     # الحصول على عدد الإحالات
     referral_count = 0
@@ -161,10 +190,9 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
                     u.first_name,
                     u.last_name,
                     COUNT(r.id) as referral_count
-                FROM users u
-                LEFT JOIN referrals r ON u.user_id = r.referred_by
-                GROUP BY u.user_id
-                HAVING referral_count > 0
+                FROM referrals r
+                JOIN users u ON r.referred_by = u.user_id
+                GROUP BY r.referred_by
                 ORDER BY referral_count DESC
                 LIMIT 10
             ''')
@@ -177,7 +205,7 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
 
             message = "🏆 <b>أفضل 10 أعضاء في الإحالات</b> 🏆\n\n"
             for idx, leader in enumerate(leaders, 1):
-                display_name = format_user_display(leader)
+                display_name = get_user_display_name_from_row(leader)
                 message += f"{get_rank_emoji(idx)} {display_name} - {leader['referral_count']} إحالة\n"
             
             message += "\nاستخدم /referral للحصول على رابط إحالتك!"
@@ -186,43 +214,6 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
     except Exception as e:
         logger.error(f"خطأ في لوحة المتصدرين: {e}")
         await update.message.reply_text("حدث خطأ في جلب البيانات. حاول لاحقاً.")
-
-def format_user_display(user_row) -> str:
-    """تنسيق اسم المستخدم للعرض في لوحة المتصدرين"""
-    if user_row['username']:
-        return f"@{user_row['username']}"
-    
-    name_parts = []
-    if user_row['first_name']:
-        name_parts.append(user_row['first_name'])
-    if user_row['last_name']:
-        name_parts.append(user_row['last_name'])
-    
-    if name_parts:
-        return ' '.join(name_parts)
-    
-    return f"المستخدم {user_row['user_id']}"
-
-def get_rank_emoji(rank: int) -> str:
-    """إرجاع إيموجي حسب الترتيب"""
-    return {
-        1: "🥇",
-        2: "🥈",
-        3: "🥉"
-    }.get(rank, f"#{rank}")
-
-def get_user_display_name(user_id: int) -> str:
-    """الحصول على اسم مستخدم للعرض"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT user_id, username, first_name, last_name FROM users WHERE user_id = ?", (user_id,))
-            user = cursor.fetchone()
-            if user:
-                return format_user_display(user)
-    except Exception as e:
-        logger.error(f"خطأ في جلب اسم المستخدم: {e}")
-    return f"المستخدم {user_id}"
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     """عرض رسالة المساعدة"""
