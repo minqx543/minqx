@@ -9,7 +9,7 @@ from datetime import datetime
 # إعداد نظام التسجيل
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG  # تغيير إلى DEBUG لمزيد من التفاصيل
 )
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ def get_db_connection():
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")  # تفعيل المفاتيح الخارجية
         yield conn
     except sqlite3.Error as e:
         logger.error(f"خطأ في الاتصال بقاعدة البيانات: {e}")
@@ -54,8 +55,8 @@ def init_db():
                 referred_user_id INTEGER NOT NULL,
                 referral_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(referred_by, referred_user_id),
-                FOREIGN KEY (referred_by) REFERENCES users(user_id),
-                FOREIGN KEY (referred_user_id) REFERENCES users(user_id)
+                FOREIGN KEY (referred_by) REFERENCES users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY (referred_user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         """)
         # إنشاء فهارس لتحسين الأداء
@@ -113,18 +114,22 @@ async def start(update: Update, context: CallbackContext) -> None:
                 referrer_id = int(context.args[0])
                 if referrer_id != user.id:
                     try:
-                        conn.execute("""
-                            INSERT OR IGNORE INTO referrals (referred_by, referred_user_id)
-                            VALUES (?, ?)
-                        """, (referrer_id, user.id))
-                        conn.commit()
-                        referrer = conn.execute("SELECT * FROM users WHERE user_id = ?", (referrer_id,)).fetchone()
-                        if referrer:
-                            referrer_name = get_user_display_name_from_row(referrer)
-                            await update.message.reply_text(
-                                f"شكراً لتسجيلك عبر إحالة {referrer_name}! 🎉\n"
-                                f"تم تسجيل إحالتك بنجاح."
-                            )
+                        # التحقق من وجود المحيل أولاً
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT 1 FROM users WHERE user_id = ?", (referrer_id,))
+                        if cursor.fetchone():
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO referrals (referred_by, referred_user_id)
+                                VALUES (?, ?)
+                            """, (referrer_id, user.id))
+                            conn.commit()
+                            referrer = conn.execute("SELECT * FROM users WHERE user_id = ?", (referrer_id,)).fetchone()
+                            if referrer:
+                                referrer_name = get_user_display_name_from_row(referrer)
+                                await update.message.reply_text(
+                                    f"شكراً لتسجيلك عبر إحالة {referrer_name}! 🎉\n"
+                                    f"تم تسجيل إحالتك بنجاح."
+                                )
                     except sqlite3.Error as e:
                         logger.error(f"خطأ في تسجيل الإحالة: {e}")
         
@@ -183,6 +188,16 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            
+            # التحقق من وجود إحالات أولاً
+            cursor.execute("SELECT COUNT(*) FROM referrals")
+            total_referrals = cursor.fetchone()[0]
+            
+            if total_referrals == 0:
+                await update.message.reply_text("لا توجد إحالات بعد! كن أول من يجلب أعضاء جدد.")
+                return
+
+            # استعلام لوحة المتصدرين المعدل
             cursor.execute('''
                 SELECT 
                     u.user_id,
@@ -190,18 +205,15 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
                     u.first_name,
                     u.last_name,
                     COUNT(r.id) as referral_count
-                FROM referrals r
-                JOIN users u ON r.referred_by = u.user_id
-                GROUP BY r.referred_by
+                FROM users u
+                INNER JOIN referrals r ON u.user_id = r.referred_by
+                GROUP BY u.user_id
                 ORDER BY referral_count DESC
                 LIMIT 10
             ''')
             
             leaders = cursor.fetchall()
-            
-            if not leaders:
-                await update.message.reply_text("لا توجد إحالات بعد! كن أول من يجلب أعضاء جدد.")
-                return
+            logger.debug(f"نتيجة لوحة المتصدرين: {leaders}")  # تسجيل النتائج
 
             message = "🏆 <b>أفضل 10 أعضاء في الإحالات</b> 🏆\n\n"
             for idx, leader in enumerate(leaders, 1):
@@ -212,7 +224,7 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
             await update.message.reply_text(message, parse_mode='HTML')
             
     except Exception as e:
-        logger.error(f"خطأ في لوحة المتصدرين: {e}")
+        logger.error(f"خطأ في لوحة المتصدرين: {e}", exc_info=True)
         await update.message.reply_text("حدث خطأ في جلب البيانات. حاول لاحقاً.")
 
 async def help_command(update: Update, context: CallbackContext) -> None:
@@ -253,7 +265,7 @@ def main():
         app.run_polling()
         
     except Exception as e:
-        logger.critical(f"تعطل البوت: {e}")
+        logger.critical(f"تعطل البوت: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
