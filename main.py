@@ -23,7 +23,18 @@ EMOJI = {
     'medal': ['🥇', '🥈', '🥉', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️', '🎖️'],
     'confetti': '🎉',
     'link': '🔗',
-    'error': '⚠️'
+    'error': '⚠️',
+    'social': '🌐'
+}
+
+# روابط المنصات الاجتماعية
+SOCIAL_LINKS = {
+    'Telegram': 'https://t.me/MissionX_offici',
+    'YouTube': 'https://youtube.com/@missionx_offici?si=4A549AkxABu523zi',
+    'TikTok': 'https://www.tiktok.com/@missionx_offici?_t=ZS-8vgxNwgERtP&_r=1',
+    'X': 'https://x.com/MissionX_Offici?t=eqZ5raOAaRfhwivFVe68rg&s=09',
+    'Facebook': 'https://www.facebook.com/share/19AMU41hhs/',
+    'Instagram': 'https://www.instagram.com/missionx_offici?igsh=MTRhNmJtNm1wYWxqYw=='
 }
 
 # 1. دوال اتصال قاعدة البيانات
@@ -255,6 +266,7 @@ async def start(update: Update, context: CallbackContext):
 {EMOJI['link']} استخدم /referral لدعوة الأصدقاء
 {EMOJI['leaderboard']} استخدم /leaderboard لرؤية المتصدرين
 {EMOJI['balance']} استخدم /balance لمعرفة رصيدك
+{EMOJI['social']} استخدم /links للوصول إلى منصاتنا الاجتماعية
 """
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
@@ -315,6 +327,21 @@ async def balance(update: Update, context: CallbackContext):
 """
     await update.message.reply_text(balance_message, parse_mode='Markdown')
 
+async def links(update: Update, context: CallbackContext):
+    links_message = f"""
+{EMOJI['social']} *روابط المنصات الرسمية* {EMOJI['social']}
+
+{EMOJI['link']} [Telegram]({SOCIAL_LINKS['Telegram']})
+{EMOJI['link']} [YouTube]({SOCIAL_LINKS['YouTube']})
+{EMOJI['link']} [TikTok]({SOCIAL_LINKS['TikTok']})
+{EMOJI['link']} [X (Twitter)]({SOCIAL_LINKS['X']})
+{EMOJI['link']} [Facebook]({SOCIAL_LINKS['Facebook']})
+{EMOJI['link']} [Instagram]({SOCIAL_LINKS['Instagram']})
+
+{EMOJI['confetti']} تابعنا على جميع المنصات لمزيد من التحديثات!
+"""
+    await update.message.reply_text(links_message, parse_mode='Markdown', disable_web_page_preview=True)
+
 async def error_handler(update: object, context: CallbackContext) -> None:
     """معالج الأخطاء العام"""
     print(f"{EMOJI['error']} حدث خطأ: {context.error}")
@@ -344,6 +371,7 @@ def main():
         app.add_handler(CommandHandler("referral", referral))
         app.add_handler(CommandHandler("leaderboard", leaderboard))
         app.add_handler(CommandHandler("balance", balance))
+        app.add_handler(CommandHandler("links", links))
         
         print(f"{EMOJI['confetti']} البوت يعمل الآن...")
         app.run_polling(
