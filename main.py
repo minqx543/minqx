@@ -112,12 +112,12 @@ class TelegramBot:
             self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
 
             print("✅ بدء تشغيل البوت...")
-            await self.app.run_polling()  # التغيير الرئيسي هنا
+            await self.app.run_polling()
         except Exception as e:
             print(f"❌ فشل في تشغيل البوت: {e}")
         finally:
             if self.app:
-                await self.app.shutdown()  # تغيير هنا أيضاً
+                await self.app.shutdown()
 
 async def main():
     bot = TelegramBot()
