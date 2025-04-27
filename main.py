@@ -66,7 +66,8 @@ def check_tables_structure():
         required_referral_columns = {'referred_user_id', 'referred_by'}
         
         conn.close()
-        return (required_user_columns.issubset(user_columns) and (required_referral_columns.issubset(referral_columns))
+        return (required_user_columns.issubset(user_columns) and 
+                required_referral_columns.issubset(referral_columns))
         
     except Exception as e:
         print(f"❌ خطأ في التحقق من هيكل الجداول: {e}")
@@ -107,8 +108,8 @@ def create_tables():
                 referred_user_id BIGINT NOT NULL,
                 referred_by BIGINT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (referred_user_id) REFERENCES users(user_id),
-                FOREIGN KEY (referred_by) REFERENCES users(user_id),
+                FOREIGN KEY (referred_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY (referred_by) REFERENCES users(user_id) ON DELETE CASCADE,
                 UNIQUE (referred_user_id)  # لمنع تكرار الإحالات لنفس المستخدم
             );
         ''')
@@ -135,13 +136,15 @@ def add_user(user_id, username):
             return False
             
         c = conn.cursor()
-        c.execute('SELECT 1 FROM users WHERE user_id = %s', (user_id,))
-        if not c.fetchone():
-            c.execute('''
-                INSERT INTO users (user_id, username) 
-                VALUES (%s, %s)
-                ON CONFLICT (user_id) DO NOTHING
-            ''', (user_id, username))
+        c.execute('''
+            INSERT INTO users (user_id, username) 
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE
+            SET username = EXCLUDED.username
+            RETURNING 1
+        ''', (user_id, username))
+        
+        if c.fetchone():
             conn.commit()
             print(f"✅ تم إضافة/تحديث مستخدم: {username} (ID: {user_id})")
         conn.close()
@@ -176,12 +179,14 @@ def add_referral(referred_user_id, referred_by):
                 UPDATE users 
                 SET balance = balance + 10 
                 WHERE user_id = %s
+                RETURNING 1
             ''', (referred_by,))
             
-            conn.commit()
-            print(f"✅ تم تسجيل إحالة: {referred_user_id} بواسطة {referred_by}")
-            conn.close()
-            return True
+            if c.fetchone():
+                conn.commit()
+                print(f"✅ تم تسجيل إحالة: {referred_user_id} بواسطة {referred_by}")
+                conn.close()
+                return True
         
         conn.close()
         return False
@@ -241,7 +246,7 @@ def get_user_balance(user_id):
 async def start(update: Update, context: CallbackContext) -> None:
     try:
         user = update.message.from_user
-        print(f"📩 تم استقبال أمر start من {user.username} (ID: {user.id})")
+        print(f"📩 تم استقبال أمر start من {user.username or 'مستخدم'} (ID: {user.id})")
         
         # التحقق مما إذا كان هناك رابط إحالة
         referral_id = None
@@ -251,7 +256,7 @@ async def start(update: Update, context: CallbackContext) -> None:
                 await update.message.reply_text("⚠️ لا يمكنك استخدام رابط الإحالة الخاص بك!")
                 referral_id = None
         
-        # إضافة المستخدم الجديد
+        # إضافة/تحديث المستخدم
         if not add_user(user.id, user.username):
             await update.message.reply_text("⚠️ حدث خطأ في تسجيل بياناتك. يرجى المحاولة لاحقًا.")
             return
@@ -264,7 +269,8 @@ async def start(update: Update, context: CallbackContext) -> None:
                 c = conn.cursor()
                 c.execute('SELECT 1 FROM users WHERE user_id = %s', (referral_id,))
                 if c.fetchone():
-                    add_referral(user.id, referral_id)
+                    if not add_referral(user.id, referral_id):
+                        print(f"⚠️ فشل في تسجيل الإحالة للمستخدم {user.id}")
                 conn.close()
         
         message = (
@@ -284,7 +290,7 @@ async def start(update: Update, context: CallbackContext) -> None:
 async def referral(update: Update, context: CallbackContext) -> None:
     try:
         user = update.message.from_user
-        print(f"📩 تم استقبال أمر referral من {user.username} (ID: {user.id})")
+        print(f"📩 تم استقبال أمر referral من {user.username or 'مستخدم'} (ID: {user.id})")
         
         link = f'https://t.me/MissionxX_bot?start={user.id}'
         balance = get_user_balance(user.id) or 0
@@ -305,7 +311,7 @@ async def referral(update: Update, context: CallbackContext) -> None:
 async def leaderboard(update: Update, context: CallbackContext) -> None:
     try:
         user = update.message.from_user
-        print(f"📩 تم استقبال أمر leaderboard من {user.username} (ID: {user.id})")
+        print(f"📩 تم استقبال أمر leaderboard من {user.username or 'مستخدم'} (ID: {user.id})")
         
         leaderboard_data = get_leaderboard()
         if not leaderboard_data:
@@ -326,7 +332,7 @@ async def leaderboard(update: Update, context: CallbackContext) -> None:
 async def balance(update: Update, context: CallbackContext) -> None:
     try:
         user = update.message.from_user
-        print(f"📩 تم استقبال أمر balance من {user.username} (ID: {user.id})")
+        print(f"📩 تم استقبال أمر balance من {user.username or 'مستخدم'} (ID: {user.id})")
         
         balance = get_user_balance(user.id)
         if balance is None:
@@ -355,7 +361,7 @@ def main():
         
         # التحقق من هيكل الجداول
         if not check_tables_structure():
-            print("⚠️ هيكل الجداول غير صحيح، جاري إعادة الإنشاء...")
+            print("⚠️ الجداول غير موجودة أو غير صحيحة، جاري الإنشاء...")
             if not create_tables():
                 print("❌ فشل في إنشاء الجداول، يرجى التحقق من اتصال قاعدة البيانات")
                 return
