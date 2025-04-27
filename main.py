@@ -42,6 +42,7 @@ def init_database():
             return False
             
         with conn.cursor() as c:
+            # إنشاء جدول المستخدمين إذا لم يكن موجودًا
             c.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -50,6 +51,12 @@ def init_database():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     welcome_bonus_received BOOLEAN DEFAULT FALSE
                 )
+            """)
+            
+            # تعديل الجدول لإضافة العمود إذا كان غير موجود (للتأكد من التوافق مع الإصدارات القديمة)
+            c.execute("""
+                ALTER TABLE users 
+                ADD COLUMN IF NOT EXISTS welcome_bonus_received BOOLEAN DEFAULT FALSE
             """)
             
             c.execute("""
@@ -103,30 +110,36 @@ def add_user(user_id, username):
             return False
             
         with conn.cursor() as c:
+            # إدراج المستخدم أو تحديث اسمه إذا كان موجودًا
             c.execute("""
                 INSERT INTO users (user_id, username)
                 VALUES (%s, %s)
                 ON CONFLICT (user_id) DO UPDATE
                 SET username = EXCLUDED.username
-                RETURNING welcome_bonus_received
             """, (user_id, username))
             
+            # التحقق مما إذا كان المستخدم جديدًا (تم إنشاؤه للتو)
+            c.execute("""
+                SELECT welcome_bonus_received FROM users WHERE user_id = %s
+            """, (user_id,))
             result = c.fetchone()
             welcome_bonus_received = result[0] if result else True
-            conn.commit()
             
             if not welcome_bonus_received:
-                # منح 100 نقطة ترحيبية
+                # منح 100 نقطة ترحيبية للمستخدم الجديد
                 c.execute("""
                     UPDATE users 
                     SET balance = balance + 100,
                         welcome_bonus_received = TRUE
                     WHERE user_id = %s
                 """, (user_id,))
-                conn.commit()
+            
+            conn.commit()
             return True
     except Exception as e:
         print(f"{EMOJI['error']} خطأ في إضافة مستخدم: {e}")
+        if conn:
+            conn.rollback()
         return False
     finally:
         if conn:
@@ -140,29 +153,31 @@ def add_referral(referred_user_id, referred_by):
             return False
             
         with conn.cursor() as c:
+            # التحقق من عدم وجود إحالة مسبقة
             c.execute("SELECT 1 FROM referrals WHERE referred_user_id = %s", (referred_user_id,))
             if c.fetchone():
                 return False
                 
+            # التحقق من وجود المستخدم المحيل
             if not user_exists(referred_by):
                 return False
                 
+            # تسجيل الإحالة الجديدة
             c.execute("""
                 INSERT INTO referrals (referred_user_id, referred_by)
                 VALUES (%s, %s)
-                RETURNING id
             """, (referred_user_id, referred_by))
             
-            if c.fetchone():
-                c.execute("""
-                    UPDATE users 
-                    SET balance = balance + 10 
-                    WHERE user_id = %s
-                """, (referred_by,))
-                conn.commit()
-                print(f"{EMOJI['confetti']} تم تسجيل إحالة: {referred_user_id} بواسطة {referred_by}")
-                return True
-        return False
+            # منح 10 نقاط للمستخدم المحيل
+            c.execute("""
+                UPDATE users 
+                SET balance = balance + 10 
+                WHERE user_id = %s
+            """, (referred_by,))
+            
+            conn.commit()
+            print(f"{EMOJI['confetti']} تم تسجيل إحالة: {referred_user_id} بواسطة {referred_by}")
+            return True
     except Exception as e:
         print(f"{EMOJI['error']} خطأ في تسجيل الإحالة: {e}")
         if conn:
