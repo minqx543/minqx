@@ -5,9 +5,13 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
+# تحميل متغيرات البيئة
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+if not TOKEN:
+    raise ValueError("❗ لم يتم تعيين TELEGRAM_TOKEN في ملف .env")
 
 class TelegramBot:
     def __init__(self):
@@ -15,7 +19,7 @@ class TelegramBot:
         self.db_pool = None
 
     async def init_db(self):
-        """Initialize the database connection pool"""
+        """تهيئة قاعدة البيانات"""
         try:
             self.db_pool = await asyncpg.create_pool(DATABASE_URL)
             async with self.db_pool.acquire() as conn:
@@ -27,13 +31,13 @@ class TelegramBot:
                         invited_by BIGINT
                     )
                 ''')
-            print("✅ Database initialized successfully")
+            print("✅ تم تهيئة قاعدة البيانات بنجاح")
         except Exception as e:
-            print(f"❌ Database initialization error: {e}")
+            print(f"❌ خطأ في تهيئة قاعدة البيانات: {e}")
             raise
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
+        """معالجة أمر /start"""
         try:
             user = update.effective_user
             referrer_id = int(context.args[0]) if context.args and context.args[0].isdigit() else None
@@ -53,11 +57,11 @@ class TelegramBot:
             
             await update.message.reply_text(f"أهلاً بك {user.first_name} في البوت!")
         except Exception as e:
-            print(f"Error in /start: {e}")
+            print(f"خطأ في /start: {e}")
             await update.message.reply_text("حدث خطأ، يرجى المحاولة لاحقاً")
 
     async def referral(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /referral command"""
+        """معالجة أمر /referral"""
         try:
             bot_username = (await context.bot.get_me()).username
             link = f"https://t.me/{bot_username}?start={update.effective_user.id}"
@@ -67,11 +71,11 @@ class TelegramBot:
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except Exception as e:
-            print(f"Error in /referral: {e}")
+            print(f"خطأ في /referral: {e}")
             await update.message.reply_text("حدث خطأ في إنشاء الرابط")
 
     async def leaderboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /leaderboard command"""
+        """معالجة أمر /leaderboard"""
         try:
             async with self.db_pool.acquire() as conn:
                 top_users = await conn.fetch(
@@ -90,11 +94,11 @@ class TelegramBot:
                 
                 await update.message.reply_text(response)
         except Exception as e:
-            print(f"Error in /leaderboard: {e}")
+            print(f"خطأ في /leaderboard: {e}")
             await update.message.reply_text("حدث خطأ في جلب البيانات")
 
     async def run(self):
-        """Run the bot"""
+        """تشغيل البوت"""
         try:
             await self.init_db()
             self.app = ApplicationBuilder().token(TOKEN).build()
@@ -103,17 +107,17 @@ class TelegramBot:
             self.app.add_handler(CommandHandler("referral", self.referral))
             self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
 
-            print("✅ Starting bot...")
+            print("✅ بدء تشغيل البوت...")
             await self.app.initialize()
             await self.app.start()
             if self.app.updater:
                 await self.app.updater.start_polling()
             
-            print("🤖 Bot is now running...")
+            print("🤖 البوت يعمل الآن...")
             await self.app.idle()
             
         except Exception as e:
-            print(f"❌ Failed to start bot: {e}")
+            print(f"❌ فشل في بدء تشغيل البوت: {e}")
         finally:
             if self.app:
                 await self.app.stop()
@@ -128,4 +132,4 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Bot stopped by user")
+        print("تم إيقاف البوت بواسطة المستخدم")
