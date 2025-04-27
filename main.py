@@ -1,8 +1,8 @@
 import os
 import asyncio
 import asyncpg
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 
 # تحميل المتغيرات من ملف .env
@@ -65,14 +65,8 @@ async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_username = (await context.bot.get_me()).username
     referral_link = f"https://t.me/{bot_username}?start={user.id}"
 
-    keyboard = [
-        [InlineKeyboardButton("مشاركة رابط الإحالة", url=referral_link)]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     await update.message.reply_text(
-        "رابط الإحالة الخاص بك:",
-        reply_markup=reply_markup
+        f"رابط الإحالة الخاص بك: {referral_link}"
     )
 
 # أمر /leaderboard
