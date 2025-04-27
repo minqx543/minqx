@@ -2,7 +2,7 @@ import os
 import asyncio
 import asyncpg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application
 from dotenv import load_dotenv
 
 # تحميل المتغيرات من ملف .env
@@ -23,6 +23,7 @@ async def create_db_connection():
 
 # إعداد الجداول في قاعدة البيانات
 async def create_tables():
+    conn = None
     try:
         conn = await create_db_connection()
         await conn.execute('''
@@ -33,18 +34,21 @@ async def create_tables():
                 invited_by BIGINT
             )
         ''')
+    except Exception as e:
+        print(f"خطأ في إنشاء الجداول: {e}")
+        raise
     finally:
         if conn:
             await conn.close()
 
 # أمر /start مع تحسينات إدارة الاتصال
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
-    username = user.first_name or "مستخدم"
-    
     conn = None
     try:
+        user = update.effective_user
+        user_id = user.id
+        username = user.first_name or "مستخدم"
+        
         conn = await create_db_connection()
         
         referrer_id = None
@@ -73,7 +77,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"أهلاً بك {username} في البوت! 🎉")
         
     except Exception as e:
-        print(f"حدث خطأ: {e}")
+        print(f"حدث خطأ في أمر start: {e}")
         await update.message.reply_text("حدث خطأ أثناء معالجة طلبك. يرجى المحاولة لاحقاً.")
     finally:
         if conn:
@@ -128,8 +132,9 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if conn:
             await conn.close()
 
-# التشغيل الرئيسي مع إدارة الأخطاء
+# التشغيل الرئيسي مع إدارة الأخطاء المحسنة
 async def main():
+    app = None
     try:
         await create_tables()
         
@@ -142,10 +147,18 @@ async def main():
         print("✅ البوت يعمل الآن...")
         await app.run_polling()
         
+    except asyncio.CancelledError:
+        print("تم إيقاف البوت...")
     except Exception as e:
         print(f"❌ فشل تشغيل البوت: {e}")
     finally:
-        print("جارٍ إيقاف البوت...")
+        if app:
+            await app.shutdown()
+            await app.stop()
+        print("تم إيقاف جميع العمليات")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nتم إيقاف البوت يدوياً")
