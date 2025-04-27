@@ -27,7 +27,211 @@ EMOJI = {
     'social': '🌐'
 }
 
-# ... (ابقى دوال اتصال قاعدة البيانات كما هي بدون تغيير) ...
+# 1. دوال اتصال قاعدة البيانات
+def get_db_connection():
+    try:
+        return psycopg2.connect(DATABASE_URL)
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في الاتصال بقاعدة البيانات: {e}")
+        return None
+
+def init_database():
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+            
+        with conn.cursor() as c:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    balance INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    welcome_bonus_received BOOLEAN DEFAULT FALSE
+                )
+            """)
+            
+            c.execute("""
+                ALTER TABLE users 
+                ADD COLUMN IF NOT EXISTS welcome_bonus_received BOOLEAN DEFAULT FALSE
+            """)
+            
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id SERIAL PRIMARY KEY,
+                    referred_user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    referred_by BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (referred_user_id)
+                )
+            """)
+            
+            c.execute("""
+                CREATE INDEX IF NOT EXISTS idx_referrals_by ON referrals(referred_by)
+            """)
+            
+            conn.commit()
+            print(f"{EMOJI['confetti']} تم تهيئة قاعدة البيانات بنجاح")
+            return True
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في تهيئة قاعدة البيانات: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+# 2. دوال التعامل مع قاعدة البيانات
+def user_exists(user_id):
+    """تحقق من وجود مستخدم في قاعدة البيانات"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+            
+        with conn.cursor() as c:
+            c.execute("SELECT 1 FROM users WHERE user_id = %s", (user_id,))
+            return c.fetchone() is not None
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في التحقق من المستخدم: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def add_user(user_id, username):
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+            
+        with conn.cursor() as c:
+            # إدراج المستخدم أو تحديث اسمه إذا كان موجودًا
+            c.execute("""
+                INSERT INTO users (user_id, username)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id) DO UPDATE
+                SET username = EXCLUDED.username
+            """, (user_id, username))
+            
+            # التحقق مما إذا كان المستخدم جديدًا (تم إنشاؤه للتو)
+            c.execute("""
+                SELECT welcome_bonus_received FROM users WHERE user_id = %s
+            """, (user_id,))
+            result = c.fetchone()
+            welcome_bonus_received = result[0] if result else True
+            
+            if not welcome_bonus_received:
+                # منح 100 نقطة ترحيبية للمستخدم الجديد
+                c.execute("""
+                    UPDATE users 
+                    SET balance = balance + 100,
+                        welcome_bonus_received = TRUE
+                    WHERE user_id = %s
+                """, (user_id,))
+            
+            conn.commit()
+            return True
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في إضافة مستخدم: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def add_referral(referred_user_id, referred_by):
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+            
+        with conn.cursor() as c:
+            # التحقق من عدم وجود إحالة مسبقة
+            c.execute("SELECT 1 FROM referrals WHERE referred_user_id = %s", (referred_user_id,))
+            if c.fetchone():
+                return False
+                
+            # التحقق من وجود المستخدم المحيل
+            if not user_exists(referred_by):
+                return False
+                
+            # تسجيل الإحالة الجديدة
+            c.execute("""
+                INSERT INTO referrals (referred_user_id, referred_by)
+                VALUES (%s, %s)
+            """, (referred_user_id, referred_by))
+            
+            # منح 10 نقاط للمستخدم المحيل
+            c.execute("""
+                UPDATE users 
+                SET balance = balance + 10 
+                WHERE user_id = %s
+            """, (referred_by,))
+            
+            conn.commit()
+            print(f"{EMOJI['confetti']} تم تسجيل إحالة: {referred_user_id} بواسطة {referred_by}")
+            return True
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في تسجيل الإحالة: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_leaderboard():
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+            
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT 
+                    u.user_id,
+                    u.username, 
+                    (SELECT COUNT(*) FROM referrals r WHERE r.referred_by = u.user_id) as referral_count,
+                    u.balance
+                FROM users u
+                ORDER BY referral_count DESC, u.balance DESC
+                LIMIT 10
+            """)
+            results = c.fetchall()
+            return [(username or 'مجهول', count or 0, balance or 0) for user_id, username, count, balance in results]
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في جلب المتصدرين: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_user_balance(user_id):
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+            
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT balance FROM users WHERE user_id = %s
+            """, (user_id,))
+            result = c.fetchone()
+            return result[0] if result else 0
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في جلب الرصيد: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
 
 # 3. دوال أوامر البوت
 async def start(update: Update, context: CallbackContext):
@@ -67,6 +271,63 @@ async def start(update: Update, context: CallbackContext):
 """
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
+async def referral(update: Update, context: CallbackContext):
+    user = update.message.from_user
+    link = f"https://t.me/MissionxX_bot?start={user.id}"
+    balance = get_user_balance(user.id) or 0
+    
+    referral_message = f"""
+{EMOJI['link']} *رابط الإحالة الخاص بك:*
+`{link}`
+
+{EMOJI['balance']} *رصيدك الحالي:* {balance} {EMOJI['point']}
+
+{EMOJI['confetti']} *معلومات الإحالة:*
+- ستحصل على {EMOJI['point']}10 نقاط لكل صديق ينضم عبر الرابط
+- كلما زاد عدد الإحالات، ارتفع ترتيبك في لوحة المتصدرين {EMOJI['leaderboard']}
+"""
+    await update.message.reply_text(referral_message, parse_mode='Markdown')
+
+async def leaderboard(update: Update, context: CallbackContext):
+    leaderboard_data = get_leaderboard()
+    
+    if not leaderboard_data:
+        await update.message.reply_text(f"{EMOJI['leaderboard']} لا يوجد بيانات متاحة حالياً!")
+        return
+    
+    if all(count == 0 and balance == 0 for _, count, balance in leaderboard_data):
+        await update.message.reply_text(f"{EMOJI['leaderboard']} لا يوجد نشاط كافي لعرض المتصدرين بعد!")
+        return
+    
+    leaderboard_text = f"{EMOJI['leaderboard']} *أفضل 10 لاعبين:*\n\n"
+    
+    for i, (username, referral_count, balance) in enumerate(leaderboard_data, 1):
+        medal = EMOJI['medal'][i-1] if i <= 3 else f"{i}."
+        leaderboard_text += (
+            f"{medal} *{username}*\n"
+            f"   {EMOJI['point']} {referral_count} إحالة\n"
+            f"   {EMOJI['balance']} {balance} نقطة\n\n"
+        )
+    
+    leaderboard_text += f"{EMOJI['link']} استخدم /referral لزيادة نقاطك!"
+    await update.message.reply_text(leaderboard_text, parse_mode='Markdown')
+
+async def balance(update: Update, context: CallbackContext):
+    user = update.message.from_user
+    balance = get_user_balance(user.id)
+    
+    if balance is None:
+        await update.message.reply_text(f"{EMOJI['error']} حدث خطأ في جلب الرصيد")
+        return
+    
+    balance_message = f"""
+{EMOJI['balance']} *رصيدك الحالي:* {balance} {EMOJI['point']}
+
+{EMOJI['link']} استخدم /referral لكسب المزيد من النقاط
+{EMOJI['leaderboard']} استخدم /leaderboard لرؤية ترتيبك
+"""
+    await update.message.reply_text(balance_message, parse_mode='Markdown')
+
 async def links(update: Update, context: CallbackContext):
     """عرض روابط المنصات الرسمية"""
     links_message = f"""
@@ -83,7 +344,11 @@ async def links(update: Update, context: CallbackContext):
 """
     await update.message.reply_text(links_message, parse_mode='Markdown', disable_web_page_preview=True)
 
-# ... (ابقى بقية الدوال كما هي بدون تغيير) ...
+async def error_handler(update: object, context: CallbackContext) -> None:
+    """معالج الأخطاء العام"""
+    print(f"{EMOJI['error']} حدث خطأ: {context.error}")
+    if update and hasattr(update, 'message'):
+        await update.message.reply_text(f"{EMOJI['error']} حدث خطأ غير متوقع. يرجى المحاولة لاحقًا.")
 
 # 4. الدالة الرئيسية
 def main():
