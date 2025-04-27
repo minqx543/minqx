@@ -90,7 +90,6 @@ class TelegramBot:
             response = "🏆 ترتيب أفضل 10 لاعبين:\n\n" + "\n".join(
                 f"{medals[i]} {user['username'] or 'لاعب'}: {user['referrals']} إحالة"
                 for i, user in enumerate(top_users)
-            )
             
             await update.message.reply_text(response)
         except Exception as e:
@@ -111,16 +110,12 @@ class TelegramBot:
             self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
 
             print("✅ Starting bot...")
-            await self.app.initialize()
-            await self.app.start()
-            if self.app.updater:
-                await self.app.updater.start_polling()
-            await self.app.idle()
+            await self.app.run_polling()  # التغيير الرئيسي هنا
         except Exception as e:
             print(f"❌ Failed to start bot: {e}")
         finally:
             if self.app:
-                await self.app.stop()
+                await self.app.shutdown()  # تغيير هنا أيضاً
 
 async def main():
     bot = TelegramBot()
