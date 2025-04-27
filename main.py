@@ -178,19 +178,13 @@ async def start(update: Update, context: CallbackContext) -> None:
                                         f"🎉 شكراً للانضمام عبر إحالة {get_user_display_name(referrer)}!\n"
                                         f"تم تسجيل إحالتك بنجاح."
                                     )
-                                    
-                                    # إعلام المحيل
                                     try:
-                                        await context.bot.send_message(
-                                            chat_id=referrer_id,
-                                            text=(f"🎊 لديك إحالة جديدة!\n"
-                                                 f"المستخدم: {get_user_display_name({
-                                                     'user_id': user.id,
-                                                     'username': user.username,
-                                                     'first_name': user.first_name,
-                                                     'last_name': user.last_name
-                                                 })}\n"
-                                                 f"🎯 النقاط المضافة: +10"
+    await context.bot.send_message(
+        chat_id=referrer_id,
+        text=(f"🎊 لديك إحالة جديدة!\n"
+              f"المستخدم: {get_user_display_name(user_id=user.id, username=user.username, first_name=user.first_name, last_name=user.last_name)}\n"
+              f"🎯 النقاط المضافة: +10")
+    )
                                         )
                                     except Exception as e:
                                         logger.warning(f"لا يمكن إرسال إشعار للمحيل: {e}")
