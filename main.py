@@ -74,9 +74,138 @@ def init_database():
         if conn:
             conn.close()
 
-# ... [ابقاء دوال التعامل مع قاعدة البيانات كما هي] ...
+# 2. دوال التعامل مع قاعدة البيانات
+def user_exists(user_id):
+    """تحقق من وجود مستخدم في قاعدة البيانات"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+            
+        with conn.cursor() as c:
+            c.execute("SELECT 1 FROM users WHERE user_id = %s", (user_id,))
+            return c.fetchone() is not None
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في التحقق من المستخدم: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
 
-# 3. دوال أوامر البوت مع تحسينات الواجهة
+def add_user(user_id, username):
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+            
+        with conn.cursor() as c:
+            c.execute("""
+                INSERT INTO users (user_id, username)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id) DO UPDATE
+                SET username = EXCLUDED.username
+            """, (user_id, username))
+            conn.commit()
+            return True
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في إضافة مستخدم: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def add_referral(referred_user_id, referred_by):
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+            
+        with conn.cursor() as c:
+            # تحقق من عدم وجود إحالة سابقة لنفس المستخدم
+            c.execute("SELECT 1 FROM referrals WHERE referred_user_id = %s", (referred_user_id,))
+            if c.fetchone():
+                return False
+                
+            # تحقق من وجود المستخدم المحيل
+            if not user_exists(referred_by):
+                return False
+                
+            # تسجيل الإحالة الجديدة
+            c.execute("""
+                INSERT INTO referrals (referred_user_id, referred_by)
+                VALUES (%s, %s)
+                RETURNING id
+            """, (referred_user_id, referred_by))
+            
+            if c.fetchone():
+                # زيادة رصيد المحيل
+                c.execute("""
+                    UPDATE users 
+                    SET balance = balance + 10 
+                    WHERE user_id = %s
+                """, (referred_by,))
+                conn.commit()
+                print(f"{EMOJI['confetti']} تم تسجيل إحالة: {referred_user_id} بواسطة {referred_by}")
+                return True
+        return False
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في تسجيل الإحالة: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_leaderboard():
+    """جلب بيانات المتصدرين مع التأكد من حساب الإحالات بشكل صحيح"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+            
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT 
+                    u.username, 
+                    COUNT(r.id) as referral_count,
+                    u.balance
+                FROM users u
+                LEFT JOIN referrals r ON u.user_id = r.referred_by
+                GROUP BY u.user_id, u.username, u.balance
+                ORDER BY referral_count DESC, u.balance DESC
+                LIMIT 10
+            """)
+            results = c.fetchall()
+            # تحويل None إلى 0 في عدد الإحالات
+            return [(username, count or 0, balance) for username, count, balance in results]
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في جلب المتصدرين: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_user_balance(user_id):
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return None
+            
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT balance FROM users WHERE user_id = %s
+            """, (user_id,))
+            result = c.fetchone()
+            return result[0] if result else 0
+    except Exception as e:
+        print(f"{EMOJI['error']} خطأ في جلب الرصيد: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+# 3. دوال أوامر البوت
 async def start(update: Update, context: CallbackContext):
     user = update.message.from_user
     print(f"{EMOJI['user']} بدء تشغيل من {user.username or user.id}")
@@ -161,6 +290,12 @@ async def balance(update: Update, context: CallbackContext):
 """
     await update.message.reply_text(balance_message, parse_mode='Markdown')
 
+async def error_handler(update: object, context: CallbackContext) -> None:
+    """معالج الأخطاء العام"""
+    print(f"{EMOJI['error']} حدث خطأ: {context.error}")
+    if update and hasattr(update, 'message'):
+        await update.message.reply_text(f"{EMOJI['error']} حدث خطأ غير متوقع. يرجى المحاولة لاحقًا.")
+
 # 4. الدالة الرئيسية
 def main():
     print(f"{EMOJI['welcome']} بدء تشغيل البوت...")
@@ -174,19 +309,34 @@ def main():
         return
     
     try:
-        app = Application.builder().token(TOKEN).build()
+        # إنشاء تطبيق البوت مع إعدادات خاصة لمنع التعارض
+        app = Application.builder() \
+            .token(TOKEN) \
+            .concurrent_updates(True) \  # السماح بمعالجة التحديثات بشكل متوازي
+            .build()
         
-        # إضافة الأوامر
+        # إضافة معالج الأخطاء
+        app.add_error_handler(error_handler)
+        
+        # تسجيل الأوامر
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("referral", referral))
         app.add_handler(CommandHandler("leaderboard", leaderboard))
         app.add_handler(CommandHandler("balance", balance))
         
         print(f"{EMOJI['confetti']} البوت يعمل الآن...")
-        app.run_polling()
+        
+        # تشغيل البوت مع إعدادات خاصة لمنع التعارض
+        app.run_polling(
+            poll_interval=2.0,  # زيادة الفترة بين طلبات التحديث
+            timeout=20,  # زيادة مهلة الانتظار
+            drop_pending_updates=True  # تجاهل التحديثات القديمة
+        )
         
     except Exception as e:
         print(f"{EMOJI['error']} خطأ في التشغيل الرئيسي: {e}")
+    finally:
+        print(f"{EMOJI['error']} إيقاف البوت...")
 
 if __name__ == "__main__":
     main()
