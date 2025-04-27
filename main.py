@@ -1,16 +1,11 @@
-import discord
-from discord.ext import commands
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
 import psycopg2
 import os
 
 # المتغيرات
 TOKEN = 'توكن_البوت_هنا'
 DATABASE_URL = os.getenv('DATABASE_URL')  # استخدام متغير البيئة الخاص بـ Render
-
-# إعداد البوت
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
 
 # الاتصال بقاعدة البيانات
 def get_db_connection():
@@ -56,31 +51,39 @@ def get_leaderboard():
     return leaderboard
 
 # عند بدء البوت
-@bot.event
-async def on_ready():
+def start(update: Update, context: CallbackContext) -> None:
+    add_user(update.message.from_user.id, update.message.from_user.username)
+    update.message.reply_text(f'مرحبًا {update.message.from_user.username}! أهلاً بك في اللعبة. نتمنى لك حظًا سعيدًا!')
+
+# أمر referral
+def referral(update: Update, context: CallbackContext) -> None:
+    link = f'https://yourwebsite.com/referral/{update.message.from_user.id}'
+    update.message.reply_text(f'رابط إحالتك الخاص هو: {link}')
+
+# أمر leaderboard
+def leaderboard(update: Update, context: CallbackContext) -> None:
+    leaderboard_data = get_leaderboard()
+    leaderboard_text = "أفضل 10 لاعبين:\n"
+    for index, (username, referrals) in enumerate(leaderboard_data, start=1):
+        leaderboard_text += f'{index}. {username} - عدد الإحالات: {referrals}\n'
+    update.message.reply_text(leaderboard_text)
+
+def main():
+    # إعداد البوت
+    updater = Updater(TOKEN)
+    dispatcher = updater.dispatcher
+
+    # عند بدء البوت
     create_db()
-    print(f'Logged in as {bot.user}')
 
-# الأمر !start
-@bot.command()
-async def start(ctx):
-    add_user(ctx.author.id, ctx.author.name)
-    await ctx.send(f'مرحبًا {ctx.author.name}! أهلاً بك في اللعبة. نتمنى لك حظًا سعيدًا!')
+    # إضافة الأوامر للبوت
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("referral", referral))
+    dispatcher.add_handler(CommandHandler("leaderboard", leaderboard))
 
-# الأمر !referral
-@bot.command()
-async def referral(ctx):
-    link = f'https://yourwebsite.com/referral/{ctx.author.id}'
-    await ctx.send(f'رابط إحالتك الخاص هو: {link}')
+    # بدء البوت
+    updater.start_polling()
+    updater.idle()
 
-# الأمر !leaderboard
-@bot.command()
-async def leaderboard(ctx):
-    leaderboard = get_leaderboard()
-    embed = discord.Embed(title="أفضل 10 لاعبين")
-    for index, (username, referrals) in enumerate(leaderboard, start=1):
-        embed.add_field(name=f'{index}. {username}', value=f'عدد الإحالات: {referrals}', inline=False)
-    await ctx.send(embed=embed)
-
-# تشغيل البوت
-bot.run(TOKEN)
+if __name__ == '__main__':
+    main()
