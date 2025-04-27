@@ -3,9 +3,14 @@ import asyncio
 import asyncpg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from dotenv import load_dotenv
 
-# قراءة رابط قاعدة البيانات من المتغير البيئي
+# تحميل المتغيرات من ملف .env
+load_dotenv()
+
+# قراءة رابط قاعدة البيانات والتوكن من المتغيرات البيئية
 DATABASE_URL = os.getenv("DATABASE_URL")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # إعداد الاتصال بقاعدة البيانات
 async def create_tables():
@@ -96,7 +101,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     await create_tables()
 
-    app = ApplicationBuilder().token("توكن البوت هنا").initialize()
+    app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("referral", referral))
