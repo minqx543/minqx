@@ -35,6 +35,7 @@ def get_db_connection():
         return None
 
 def init_database():
+    conn = None
     try:
         conn = get_db_connection()
         if not conn:
@@ -77,6 +78,7 @@ def init_database():
 # 2. دوال التعامل مع قاعدة البيانات
 def user_exists(user_id):
     """تحقق من وجود مستخدم في قاعدة البيانات"""
+    conn = None
     try:
         conn = get_db_connection()
         if not conn:
@@ -93,6 +95,7 @@ def user_exists(user_id):
             conn.close()
 
 def add_user(user_id, username):
+    conn = None
     try:
         conn = get_db_connection()
         if not conn:
@@ -115,6 +118,7 @@ def add_user(user_id, username):
             conn.close()
 
 def add_referral(referred_user_id, referred_by):
+    conn = None
     try:
         conn = get_db_connection()
         if not conn:
@@ -159,6 +163,7 @@ def add_referral(referred_user_id, referred_by):
 
 def get_leaderboard():
     """جلب بيانات المتصدرين مع التأكد من حساب الإحالات بشكل صحيح"""
+    conn = None
     try:
         conn = get_db_connection()
         if not conn:
@@ -167,18 +172,16 @@ def get_leaderboard():
         with conn.cursor() as c:
             c.execute("""
                 SELECT 
+                    u.user_id,
                     u.username, 
-                    COUNT(r.id) as referral_count,
+                    (SELECT COUNT(*) FROM referrals r WHERE r.referred_by = u.user_id) as referral_count,
                     u.balance
                 FROM users u
-                LEFT JOIN referrals r ON u.user_id = r.referred_by
-                GROUP BY u.user_id, u.username, u.balance
                 ORDER BY referral_count DESC, u.balance DESC
                 LIMIT 10
             """)
             results = c.fetchall()
-            # تحويل None إلى 0 في عدد الإحالات
-            return [(username, count or 0, balance) for username, count, balance in results]
+            return [(username or 'مجهول', count or 0, balance or 0) for user_id, username, count, balance in results]
     except Exception as e:
         print(f"{EMOJI['error']} خطأ في جلب المتصدرين: {e}")
         return None
@@ -187,6 +190,7 @@ def get_leaderboard():
             conn.close()
 
 def get_user_balance(user_id):
+    conn = None
     try:
         conn = get_db_connection()
         if not conn:
@@ -238,8 +242,13 @@ async def start(update: Update, context: CallbackContext):
 
 async def leaderboard(update: Update, context: CallbackContext):
     leaderboard_data = get_leaderboard()
+    
     if not leaderboard_data:
-        await update.message.reply_text(f"{EMOJI['leaderboard']} لا يوجد متصدرين بعد!")
+        await update.message.reply_text(f"{EMOJI['leaderboard']} لا يوجد بيانات متاحة حالياً!")
+        return
+    
+    if all(count == 0 and balance == 0 for _, count, balance in leaderboard_data):
+        await update.message.reply_text(f"{EMOJI['leaderboard']} لا يوجد نشاط كافي لعرض المتصدرين بعد!")
         return
     
     # إنشاء رسالة المتصدرين بتنسيق جميل
@@ -247,9 +256,8 @@ async def leaderboard(update: Update, context: CallbackContext):
     
     for i, (username, referral_count, balance) in enumerate(leaderboard_data, 1):
         medal = EMOJI['medal'][i-1] if i <= 3 else f"{i}."
-        username_display = username or 'مجهول'
         leaderboard_text += (
-            f"{medal} *{username_display}*\n"
+            f"{medal} *{username}*\n"
             f"   {EMOJI['point']} {referral_count} إحالة\n"
             f"   {EMOJI['balance']} {balance} نقطة\n\n"
         )
