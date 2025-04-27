@@ -95,18 +95,19 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     await create_tables()
 
+    # استخدام ApplicationBuilder بشكل صحيح لإنشاء البوت
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # إضافة المعالجات للأوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("referral", referral))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
 
-    # بدء البوت بطريقة صحيحة
+    # بدء البوت باستخدام start_polling بشكل صحيح
     await app.initialize()
-    await app.start_polling()  # استخدم start_polling بدلاً من start
+    await app.start_polling()  # بدء البوت باستخدام start_polling بدلاً من start
     print("Bot started...")
-    await app.updater.start_polling()  # إذا كنت تستخدم Polling
-    await app.idle()  # بعد الانتهاء من البوت
+    await app.idle()  # الانتظار حتى يتم إغلاق البوت
 
 if __name__ == '__main__':
     asyncio.run(main())
