@@ -1,5 +1,4 @@
 import os
-import asyncio
 import asyncpg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -11,8 +10,7 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 class TelegramBot:
     def __init__(self):
-        self.app = None
-        self._running = False
+        self.app = ApplicationBuilder().token(TOKEN).build()
 
     async def init_db(self):
         """تهيئة اتصال قاعدة البيانات وإنشاء الجداول"""
@@ -96,35 +94,14 @@ class TelegramBot:
 
     async def run(self):
         """تشغيل البوت الرئيسي"""
-        try:
-            await self.init_db()
-            self.app = ApplicationBuilder().token(TOKEN).build()
-            
-            self.app.add_handler(CommandHandler("start", self.start))
-            self.app.add_handler(CommandHandler("referral", self.referral))
-            self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
-            
-            self._running = True
-            print("✅ البوت يعمل الآن...")
-            await self.app.run_polling()
-            
-        except Exception as e:
-            print(f"❌ فشل تشغيل البوت: {e}")
-        finally:
-            await self.stop()
+        await self.init_db()
 
-    async def stop(self):
-        """إيقاف البوت بشكل آمن"""
-        if self.app and self._running:
-            try:
-                await self.app.updater.stop()
-                await self.app.stop()
-                await self.app.shutdown()
-            except Exception as e:
-                print(f"⚠️ خطأ أثناء الإيقاف: {e}")
-            finally:
-                self._running = False
-                print("تم إيقاف البوت")
+        self.app.add_handler(CommandHandler("start", self.start))
+        self.app.add_handler(CommandHandler("referral", self.referral))
+        self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
+
+        print("✅ البوت يعمل الآن...")
+        await self.app.run_polling()
 
 async def main():
     bot = TelegramBot()
@@ -132,6 +109,7 @@ async def main():
 
 if __name__ == '__main__':
     try:
+        import asyncio
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nتم إيقاف البوت يدوياً")
