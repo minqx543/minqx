@@ -63,7 +63,7 @@ class Database:
                     )
                 """)
                 
-                # إنشاء جدول الإحالات
+                # إنشاء جدول الإحالات - تم تصحيح الخطأ هنا بإضافة القوس الناقص
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS referrals (
                         id SERIAL PRIMARY KEY,
@@ -71,6 +71,7 @@ class Database:
                         referred_by BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE (referred_user_id)
+                    )
                 """)
                 
                 # إنشاء فهرس لتحسين الأداء
@@ -88,6 +89,7 @@ class Database:
             if conn:
                 conn.close()
 
+    # باقي دوال الفئة Database تبقى كما هي...
     @staticmethod
     def user_exists(user_id):
         conn = None
@@ -231,6 +233,7 @@ class Database:
             if conn:
                 conn.close()
 
+# باقي الدوال والأوامر تبقى كما هي...
 async def start(update: Update, context: CallbackContext):
     try:
         user = update.message.from_user
