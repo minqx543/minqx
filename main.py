@@ -103,11 +103,9 @@ async def main():
     app.add_handler(CommandHandler("referral", referral))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
 
-    # بدء البوت باستخدام start_polling بشكل صحيح
-    await app.initialize()
-    await app.start_polling()  # بدء البوت باستخدام start_polling بدلاً من start
+    # بدء البوت باستخدام run_polling
+    await app.run_polling()  # استخدام run_polling بدلاً من start_polling
     print("Bot started...")
-    await app.idle()  # الانتظار حتى يتم إغلاق البوت
 
 if __name__ == '__main__':
     asyncio.run(main())
