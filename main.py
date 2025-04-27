@@ -2,9 +2,13 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
 import psycopg2
 import os
+from dotenv import load_dotenv
+
+# تحميل المتغيرات البيئية من ملف .env (إذا كنت تستخدمه)
+load_dotenv()
 
 # المتغيرات
-TOKEN = 'توكن_البوت_هنا'
+TOKEN = os.getenv('TELEGRAM_TOKEN')  # استخدام متغير البيئة الخاص بالتوكن
 DATABASE_URL = os.getenv('DATABASE_URL')  # استخدام متغير البيئة الخاص بـ Render
 
 # الاتصال بقاعدة البيانات
