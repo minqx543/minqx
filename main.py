@@ -103,13 +103,14 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
 
         print("✅ البوت يعمل الآن...")
+        await self.app.initialize()  # <-- هذا السطر المفقود
         await self.app.start()
         await self.app.updater.start_polling()
-        await self.app.updater.idle()
+        await self.app.idle()  # <-- تم تغيير updater.idle() إلى app.idle()
 
-bot = TelegramBot()
+async def main():
+    bot = TelegramBot()
+    await bot.run()
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    loop.create_task(bot.run())
-    loop.run_forever()
+    asyncio.run(main())  # <-- الطريقة الموصى بها لتشغيل async
