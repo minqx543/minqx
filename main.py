@@ -14,9 +14,9 @@ class TelegramBot:
         self.app = None
 
     async def init_db(self):
-        """تهيئة قاعدة البيانات"""
-        conn = await asyncpg.connect(DATABASE_URL)
+        """Initialize the database"""
         try:
+            conn = await asyncpg.connect(DATABASE_URL)
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
@@ -25,13 +25,18 @@ class TelegramBot:
                     invited_by BIGINT
                 )
             ''')
+            print("✅ Database initialized successfully")
+        except Exception as e:
+            print(f"❌ Database initialization error: {e}")
+            raise
         finally:
-            await conn.close()
+            if conn:
+                await conn.close()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """معالجة أمر /start"""
-        conn = await asyncpg.connect(DATABASE_URL)
+        """Handle /start command"""
         try:
+            conn = await asyncpg.connect(DATABASE_URL)
             user = update.effective_user
             referrer_id = int(context.args[0]) if context.args and context.args[0].isdigit() else None
             
@@ -52,10 +57,11 @@ class TelegramBot:
             print(f"Error in /start: {e}")
             await update.message.reply_text("حدث خطأ، يرجى المحاولة لاحقاً")
         finally:
-            await conn.close()
+            if conn:
+                await conn.close()
 
     async def referral(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """معالجة أمر /referral"""
+        """Handle /referral command"""
         try:
             bot_username = (await context.bot.get_me()).username
             link = f"https://t.me/{bot_username}?start={update.effective_user.id}"
@@ -69,9 +75,9 @@ class TelegramBot:
             await update.message.reply_text("حدث خطأ في إنشاء الرابط")
 
     async def leaderboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """معالجة أمر /leaderboard"""
-        conn = await asyncpg.connect(DATABASE_URL)
+        """Handle /leaderboard command"""
         try:
+            conn = await asyncpg.connect(DATABASE_URL)
             top_users = await conn.fetch(
                 'SELECT username, referrals FROM users ORDER BY referrals DESC LIMIT 10'
             )
@@ -91,26 +97,37 @@ class TelegramBot:
             print(f"Error in /leaderboard: {e}")
             await update.message.reply_text("حدث خطأ في جلب البيانات")
         finally:
-            await conn.close()
+            if conn:
+                await conn.close()
 
     async def run(self):
-        """تشغيل البوت"""
-        await self.init_db()
-        self.app = ApplicationBuilder().token(TOKEN).build()
-        
-        self.app.add_handler(CommandHandler("start", self.start))
-        self.app.add_handler(CommandHandler("referral", self.referral))
-        self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
+        """Run the bot"""
+        try:
+            await self.init_db()
+            self.app = ApplicationBuilder().token(TOKEN).build()
+            
+            self.app.add_handler(CommandHandler("start", self.start))
+            self.app.add_handler(CommandHandler("referral", self.referral))
+            self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
 
-        print("✅ البوت يعمل الآن...")
-        await self.app.initialize()  # <-- هذا السطر المفقود
-        await self.app.start()
-        await self.app.updater.start_polling()
-        await self.app.idle()  # <-- تم تغيير updater.idle() إلى app.idle()
+            print("✅ Starting bot...")
+            await self.app.initialize()
+            await self.app.start()
+            if self.app.updater:
+                await self.app.updater.start_polling()
+            await self.app.idle()
+        except Exception as e:
+            print(f"❌ Failed to start bot: {e}")
+        finally:
+            if self.app:
+                await self.app.stop()
 
 async def main():
     bot = TelegramBot()
     await bot.run()
 
 if __name__ == '__main__':
-    asyncio.run(main())  # <-- الطريقة الموصى بها لتشغيل async
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped by user")
