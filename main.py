@@ -4,7 +4,7 @@ import psycopg2
 import os
 
 # المتغيرات
-TOKEN = 'توكن_البوت_هنا'
+TOKEN = os.getenv('TELEGRAM_TOKEN')  # استخدم التوكن من البيئة
 DATABASE_URL = os.getenv('DATABASE_URL')  # استخدام متغير البيئة الخاص بـ Render
 
 # الاتصال بقاعدة البيانات
