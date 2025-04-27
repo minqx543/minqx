@@ -310,10 +310,10 @@ def main():
     
     try:
         # إنشاء تطبيق البوت مع إعدادات خاصة لمنع التعارض
-        app = Application.builder() \
-            .token(TOKEN) \
-            .concurrent_updates(True) \  # السماح بمعالجة التحديثات بشكل متوازي
-            .build()
+        app = (Application.builder()
+            .token(TOKEN)
+            .concurrent_updates(True)  # السماح بمعالجة التحديثات بشكل متوازي
+            .build())
         
         # إضافة معالج الأخطاء
         app.add_error_handler(error_handler)
