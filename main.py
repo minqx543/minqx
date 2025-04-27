@@ -1,115 +1,86 @@
+import discord
+from discord.ext import commands
+import psycopg2
 import os
-import asyncio
-import asyncpg
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-    Application
-)
-from dotenv import load_dotenv
 
-load_dotenv()
+# المتغيرات
+TOKEN = 'توكن_البوت_هنا'
+DATABASE_URL = os.getenv('DATABASE_URL')  # استخدام متغير البيئة الخاص بـ Render
 
-class TelegramBot:
-    def __init__(self):
-        self.app: Application = None
-        self.db_pool = None
+# إعداد البوت
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-    async def init_db(self):
-        """تهيئة اتصال قاعدة البيانات مع Connection Pool"""
-        try:
-            self.db_pool = await asyncpg.create_pool(
-                dsn=os.getenv("DATABASE_URL"),
-                min_size=1,
-                max_size=5
-            )
-            
-            async with self.db_pool.acquire() as conn:
-                await conn.execute('''
-                    CREATE TABLE IF NOT EXISTS users (
-                        user_id BIGINT PRIMARY KEY,
-                        username TEXT,
-                        referrals INTEGER DEFAULT 0,
-                        invited_by BIGINT
-                    )
-                ''')
-            print("✅ تم الاتصال بقاعدة البيانات بنجاح")
-        except Exception as e:
-            print(f"🔥 فشل الاتصال بقاعدة البيانات: {str(e)}")
-            raise
+# الاتصال بقاعدة البيانات
+def get_db_connection():
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
 
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """معالجة أمر /start مع تتبع الأخطاء المحسنة"""
-        try:
-            async with self.db_pool.acquire() as conn:
-                user = update.effective_user
-                referrer_id = int(context.args[0]) if context.args and context.args[0].isdigit() else None
-                
-                exists = await conn.fetchrow('SELECT 1 FROM users WHERE user_id = $1', user.id)
-                if not exists:
-                    await conn.execute(
-                        'INSERT INTO users (user_id, username, invited_by) VALUES ($1, $2, $3)',
-                        user.id, user.first_name or "مستخدم", referrer_id
-                    )
-                    if referrer_id:
-                        await conn.execute(
-                            'UPDATE users SET referrals = referrals + 1 WHERE user_id = $1',
-                            referrer_id
-                        )
-                
-                await update.message.reply_text(f"مرحباً {user.first_name}! البوت يعمل ✅")
-        except Exception as e:
-            print(f"⛔ خطأ في /start: {str(e)}")
-            await update.message.reply_text("حدث خطأ غير متوقع، الرجاء المحاولة لاحقاً")
+# إنشاء جدول إذا لم يكن موجودًا
+def create_db():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT,
+                    referrals INTEGER DEFAULT 0)''')
+    conn.commit()
+    conn.close()
 
-    async def run(self):
-        """تشغيل البوت مع معالجة محسنة للأخطاء"""
-        try:
-            await self.init_db()
-            
-            self.app = (
-                ApplicationBuilder()
-                .token(os.getenv("TELEGRAM_TOKEN"))
-                .post_init(self.post_init)
-                .build()
-            )
-            
-            self.app.add_handler(CommandHandler("start", self.start))
-            
-            print("🚀 بدء تشغيل البوت...")
-            await self.app.run_polling(
-                drop_pending_updates=True,
-                allowed_updates=Update.ALL_TYPES
-            )
-            
-        except Exception as e:
-            print(f"💥 انهيار البوت: {str(e)}")
-        finally:
-            await self.cleanup()
+# تسجيل لاعب جديد
+def add_user(user_id, username):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('SELECT * FROM users WHERE id = %s', (user_id,))
+    if not c.fetchone():
+        c.execute('INSERT INTO users (id, username) VALUES (%s, %s)', (user_id, username))
+        conn.commit()
+    conn.close()
 
-    async def post_init(self, application: Application):
-        """وظيفة ما بعد التهيئة"""
-        print("🔔 البوت جاهز للاستقبال الأوامر")
+# تحديث عدد الإحالات
+def update_referrals(user_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('UPDATE users SET referrals = referrals + 1 WHERE id = %s', (user_id,))
+    conn.commit()
+    conn.close()
 
-    async def cleanup(self):
-        """تنظيف الموارد"""
-        try:
-            if self.db_pool:
-                await self.db_pool.close()
-            if self.app:
-                await self.app.shutdown()
-            print("🛑 تم إيقاف البوت بسلام")
-        except Exception as e:
-            print(f"⚠️ خطأ أثناء التنظيف: {str(e)}")
+# جلب ترتيب اللاعبين
+def get_leaderboard():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('SELECT username, referrals FROM users ORDER BY referrals DESC LIMIT 10')
+    leaderboard = c.fetchall()
+    conn.close()
+    return leaderboard
 
-if __name__ == '__main__':
-    bot = TelegramBot()
-    
-    try:
-        asyncio.run(bot.run())
-    except KeyboardInterrupt:
-        print("⏹ تم إيقاف البوت يدوياً")
-    except Exception as e:
-        print(f"☠️ خطأ غير متوقع: {str(e)}")
+# عند بدء البوت
+@bot.event
+async def on_ready():
+    create_db()
+    print(f'Logged in as {bot.user}')
+
+# الأمر !start
+@bot.command()
+async def start(ctx):
+    add_user(ctx.author.id, ctx.author.name)
+    await ctx.send(f'مرحبًا {ctx.author.name}! أهلاً بك في اللعبة. نتمنى لك حظًا سعيدًا!')
+
+# الأمر !referral
+@bot.command()
+async def referral(ctx):
+    link = f'https://yourwebsite.com/referral/{ctx.author.id}'
+    await ctx.send(f'رابط إحالتك الخاص هو: {link}')
+
+# الأمر !leaderboard
+@bot.command()
+async def leaderboard(ctx):
+    leaderboard = get_leaderboard()
+    embed = discord.Embed(title="أفضل 10 لاعبين")
+    for index, (username, referrals) in enumerate(leaderboard, start=1):
+        embed.add_field(name=f'{index}. {username}', value=f'عدد الإحالات: {referrals}', inline=False)
+    await ctx.send(embed=embed)
+
+# تشغيل البوت
+bot.run(TOKEN)
