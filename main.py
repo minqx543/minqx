@@ -4,7 +4,7 @@ import psycopg2
 import os
 
 # المتغيرات
-TOKEN = os.getenv('TELEGRAM_TOKEN')  # استخدم التوكن من البيئة
+TOKEN = 'توكن_البوت_هنا'
 DATABASE_URL = os.getenv('DATABASE_URL')  # استخدام متغير البيئة الخاص بـ Render
 
 # الاتصال بقاعدة البيانات
@@ -53,7 +53,13 @@ def get_leaderboard():
 # عند بدء البوت
 async def start(update: Update, context: CallbackContext) -> None:
     add_user(update.message.from_user.id, update.message.from_user.username)
-    await update.message.reply_text(f'مرحبًا {update.message.from_user.username}! أهلاً بك في اللعبة. نتمنى لك حظًا سعيدًا!')
+    message = (
+        f'مرحبًا {update.message.from_user.username}!\n'
+        'أهلاً بك في اللعبة! نتمنى لك حظًا سعيدًا.\n'
+        'لتبدأ في إحالة أصدقائك ورفع ترتيبك، استخدم الأمر /referral.\n'
+        'إليك رابط البوت: @MissionxX_bot'
+    )
+    await update.message.reply_text(message)
 
 # أمر referral
 async def referral(update: Update, context: CallbackContext) -> None:
