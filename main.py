@@ -47,7 +47,8 @@ def init_database():
                     user_id BIGINT PRIMARY KEY,
                     username TEXT,
                     balance INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    welcome_bonus_received BOOLEAN DEFAULT FALSE
                 )
             """)
             
@@ -107,8 +108,22 @@ def add_user(user_id, username):
                 VALUES (%s, %s)
                 ON CONFLICT (user_id) DO UPDATE
                 SET username = EXCLUDED.username
+                RETURNING welcome_bonus_received
             """, (user_id, username))
+            
+            result = c.fetchone()
+            welcome_bonus_received = result[0] if result else True
             conn.commit()
+            
+            if not welcome_bonus_received:
+                # منح 100 نقطة ترحيبية
+                c.execute("""
+                    UPDATE users 
+                    SET balance = balance + 100,
+                        welcome_bonus_received = TRUE
+                    WHERE user_id = %s
+                """, (user_id,))
+                conn.commit()
             return True
     except Exception as e:
         print(f"{EMOJI['error']} خطأ في إضافة مستخدم: {e}")
@@ -125,16 +140,13 @@ def add_referral(referred_user_id, referred_by):
             return False
             
         with conn.cursor() as c:
-            # تحقق من عدم وجود إحالة سابقة لنفس المستخدم
             c.execute("SELECT 1 FROM referrals WHERE referred_user_id = %s", (referred_user_id,))
             if c.fetchone():
                 return False
                 
-            # تحقق من وجود المستخدم المحيل
             if not user_exists(referred_by):
                 return False
                 
-            # تسجيل الإحالة الجديدة
             c.execute("""
                 INSERT INTO referrals (referred_user_id, referred_by)
                 VALUES (%s, %s)
@@ -142,7 +154,6 @@ def add_referral(referred_user_id, referred_by):
             """, (referred_user_id, referred_by))
             
             if c.fetchone():
-                # زيادة رصيد المحيل
                 c.execute("""
                     UPDATE users 
                     SET balance = balance + 10 
@@ -162,7 +173,6 @@ def add_referral(referred_user_id, referred_by):
             conn.close()
 
 def get_leaderboard():
-    """جلب بيانات المتصدرين مع التأكد من حساب الإحالات بشكل صحيح"""
     conn = None
     try:
         conn = get_db_connection()
@@ -214,9 +224,18 @@ async def start(update: Update, context: CallbackContext):
     user = update.message.from_user
     print(f"{EMOJI['user']} بدء تشغيل من {user.username or user.id}")
     
+    is_new_user = not user_exists(user.id)
+    
     if not add_user(user.id, user.username):
         await update.message.reply_text(f"{EMOJI['error']} حدث خطأ في التسجيل")
         return
+    
+    # إرسال رسالة المكافأة الترحيبية للمستخدمين الجدد
+    if is_new_user:
+        await update.message.reply_text(
+            f"{EMOJI['confetti']} مبروك! لقد حصلت على 100 نقطة ترحيبية!",
+            parse_mode='Markdown'
+        )
     
     # معالجة رابط الإحالة
     if context.args and context.args[0].isdigit():
@@ -225,18 +244,17 @@ async def start(update: Update, context: CallbackContext):
             if add_referral(user.id, referral_id):
                 await update.message.reply_text(f"{EMOJI['confetti']} تم تسجيل إحالتك بنجاح وحصلت على {EMOJI['point']}10 نقاط!")
     
-    # رسالة ترحيبية مخصصة
     welcome_message = f"""
 {EMOJI['welcome']} *مرحباً {user.username or 'صديقي العزيز'}!* {EMOJI['welcome']}
 
 {EMOJI['user']} *اسمك:* {user.first_name or 'لاعب جديد'}
 {EMOJI['id']} *رقمك:* `{user.id}`
 
-{EMOJI['link']} استخدم /referral للحصول على رابط الإحالة
+{EMOJI['confetti']} *لقد حصلت على 100 نقطة ترحيبية!*
+
+{EMOJI['link']} استخدم /referral لدعوة الأصدقاء
 {EMOJI['leaderboard']} استخدم /leaderboard لرؤية المتصدرين
 {EMOJI['balance']} استخدم /balance لمعرفة رصيدك
-
-{EMOJI['confetti']} *نتمنى لك تجربة ممتعة مع بوتنا!*
 """
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
@@ -251,7 +269,6 @@ async def leaderboard(update: Update, context: CallbackContext):
         await update.message.reply_text(f"{EMOJI['leaderboard']} لا يوجد نشاط كافي لعرض المتصدرين بعد!")
         return
     
-    # إنشاء رسالة المتصدرين بتنسيق جميل
     leaderboard_text = f"{EMOJI['leaderboard']} *أفضل 10 لاعبين:*\n\n"
     
     for i, (username, referral_count, balance) in enumerate(leaderboard_data, 1):
@@ -317,28 +334,22 @@ def main():
         return
     
     try:
-        # إنشاء تطبيق البوت مع إعدادات خاصة لمنع التعارض
-        app = (Application.builder()
-            .token(TOKEN)
-            .concurrent_updates(True)  # السماح بمعالجة التحديثات بشكل متوازي
-            .build())
+        app = Application.builder() \
+            .token(TOKEN) \
+            .concurrent_updates(True) \
+            .build()
         
-        # إضافة معالج الأخطاء
         app.add_error_handler(error_handler)
-        
-        # تسجيل الأوامر
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("referral", referral))
         app.add_handler(CommandHandler("leaderboard", leaderboard))
         app.add_handler(CommandHandler("balance", balance))
         
         print(f"{EMOJI['confetti']} البوت يعمل الآن...")
-        
-        # تشغيل البوت مع إعدادات خاصة لمنع التعارض
         app.run_polling(
-            poll_interval=2.0,  # زيادة الفترة بين طلبات التحديث
-            timeout=20,  # زيادة مهلة الانتظار
-            drop_pending_updates=True  # تجاهل التحديثات القديمة
+            poll_interval=2.0,
+            timeout=20,
+            drop_pending_updates=True
         )
         
     except Exception as e:
