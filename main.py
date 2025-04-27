@@ -183,7 +183,7 @@ async def start(update: Update, context: CallbackContext) -> None:
                                     try:
                                         await context.bot.send_message(
                                             chat_id=referrer_id,
-                                            text=f"🎊 لديك إحالة جديدة!\n"
+                                            text=(f"🎊 لديك إحالة جديدة!\n"
                                                  f"المستخدم: {get_user_display_name({
                                                      'user_id': user.id,
                                                      'username': user.username,
