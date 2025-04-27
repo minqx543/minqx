@@ -56,6 +56,7 @@ def get_leaderboard():
 
 # عند بدء البوت
 async def start(update: Update, context: CallbackContext) -> None:
+    print(f"تم استقبال أمر start من {update.message.from_user.username}")
     add_user(update.message.from_user.id, update.message.from_user.username)
     message = (
         f'مرحبًا {update.message.from_user.username}!\n'
@@ -72,6 +73,7 @@ async def referral(update: Update, context: CallbackContext) -> None:
 
 # أمر leaderboard
 async def leaderboard(update: Update, context: CallbackContext) -> None:
+    print(f"تم استقبال أمر leaderboard من {update.message.from_user.username}")
     leaderboard_data = get_leaderboard()
     leaderboard_text = "أفضل 10 لاعبين:\n"
     for index, (username, referrals) in enumerate(leaderboard_data, start=1):
