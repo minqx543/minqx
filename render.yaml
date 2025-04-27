@@ -2,8 +2,12 @@ services:
   - name: telegram-referral-bot
     type: worker
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
+        fromGroup: bot-credentials
+      - key: DATABASE_URL
         fromGroup: bot-credentials
