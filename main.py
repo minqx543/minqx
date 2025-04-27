@@ -2,7 +2,7 @@ import os
 import asyncio
 import asyncpg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Application
 from dotenv import load_dotenv
 
 # تحميل المتغيرات من ملف .env
@@ -107,8 +107,11 @@ async def main():
     app.add_handler(CommandHandler("referral", referral))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
 
+    # بدء البوت بطريقة صحيحة
+    await app.initialize()
     await app.start()
     print("Bot started...")
+    await app.updater.start_polling()  # إذا كنت تستخدم Polling
     await app.idle()
 
 if __name__ == '__main__':
