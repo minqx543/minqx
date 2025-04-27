@@ -103,10 +103,10 @@ async def main():
 
     # بدء البوت بطريقة صحيحة
     await app.initialize()
-    await app.start()
+    await app.start_polling()  # استخدم start_polling بدلاً من start
     print("Bot started...")
     await app.updater.start_polling()  # إذا كنت تستخدم Polling
-    await app.idle()
+    await app.idle()  # بعد الانتهاء من البوت
 
 if __name__ == '__main__':
     asyncio.run(main())
