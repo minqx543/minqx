@@ -1,4 +1,5 @@
 import os
+import asyncio
 import asyncpg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -10,10 +11,10 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 class TelegramBot:
     def __init__(self):
-        self.app = ApplicationBuilder().token(TOKEN).build()
+        self.app = None
 
     async def init_db(self):
-        """تهيئة اتصال قاعدة البيانات وإنشاء الجداول"""
+        """تهيئة قاعدة البيانات"""
         conn = await asyncpg.connect(DATABASE_URL)
         try:
             await conn.execute('''
@@ -46,7 +47,7 @@ class TelegramBot:
                         referrer_id
                     )
             
-            await update.message.reply_text(f"أهلاً بك {user.first_name} في البوت! 🎉")
+            await update.message.reply_text(f"أهلاً بك {user.first_name} في البوت!")
         except Exception as e:
             print(f"Error in /start: {e}")
             await update.message.reply_text("حدث خطأ، يرجى المحاولة لاحقاً")
@@ -93,25 +94,22 @@ class TelegramBot:
             await conn.close()
 
     async def run(self):
-        """تشغيل البوت الرئيسي"""
+        """تشغيل البوت"""
         await self.init_db()
-
+        self.app = ApplicationBuilder().token(TOKEN).build()
+        
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CommandHandler("referral", self.referral))
         self.app.add_handler(CommandHandler("leaderboard", self.leaderboard))
 
         print("✅ البوت يعمل الآن...")
-        await self.app.run_polling()
+        await self.app.start()
+        await self.app.updater.start_polling()
+        await self.app.updater.idle()
 
-async def main():
-    bot = TelegramBot()
-    await bot.run()
+bot = TelegramBot()
 
 if __name__ == '__main__':
-    try:
-        import asyncio
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nتم إيقاف البوت يدوياً")
-    except Exception as e:
-        print(f"خطأ غير متوقع: {e}")
+    loop = asyncio.get_event_loop()
+    loop.create_task(bot.run())
+    loop.run_forever()
