@@ -43,15 +43,21 @@ def init_database():
             return False
             
         with conn.cursor() as c:
+            # إنشاء جدول المستخدمين إذا لم يكن موجوداً
             c.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
                     username TEXT,
-                    first_name TEXT,
                     balance INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     welcome_bonus_received BOOLEAN DEFAULT FALSE
                 )
+            """)
+            
+            # إضافة العمود first_name إذا لم يكن موجوداً (للتأكد من التوافق مع الإصدارات القديمة)
+            c.execute("""
+                ALTER TABLE users 
+                ADD COLUMN IF NOT EXISTS first_name TEXT
             """)
             
             c.execute("""
@@ -104,6 +110,7 @@ def add_user(user_id, username, first_name=None):
             return False
             
         with conn.cursor() as c:
+            # إدراج المستخدم مع first_name أو تحديث البيانات
             c.execute("""
                 INSERT INTO users (user_id, username, first_name)
                 VALUES (%s, %s, %s)
@@ -118,6 +125,7 @@ def add_user(user_id, username, first_name=None):
             conn.commit()
             
             if not welcome_bonus_received:
+                # منح نقاط ترحيبية للمستخدم الجديد
                 c.execute("""
                     UPDATE users 
                     SET balance = balance + 100,
@@ -141,13 +149,16 @@ def add_referral(referred_user_id, referred_by):
             return False
             
         with conn.cursor() as c:
+            # التحقق من عدم وجود إحالة مسبقة
             c.execute("SELECT 1 FROM referrals WHERE referred_user_id = %s", (referred_user_id,))
             if c.fetchone():
                 return False
                 
+            # التحقق من وجود المستخدم المحيل
             if not user_exists(referred_by):
                 return False
                 
+            # تسجيل الإحالة الجديدة
             c.execute("""
                 INSERT INTO referrals (referred_user_id, referred_by)
                 VALUES (%s, %s)
@@ -155,6 +166,7 @@ def add_referral(referred_user_id, referred_by):
             """, (referred_user_id, referred_by))
             
             if c.fetchone():
+                # منح نقاط للمستخدم المحيل
                 c.execute("""
                     UPDATE users 
                     SET balance = balance + 10 
