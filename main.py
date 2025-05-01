@@ -33,7 +33,7 @@ SOCIAL_LINKS = {
     'tiktok': 'https://www.tiktok.com/@missionx_offici?_t=ZS-8vgxNwgERtP&_r=1',
     'youtube': 'https://youtube.com/@missionx_offici?si=4A549AkxABu523zi',
     'telegram': 'https://t.me/MissionX_offici',
-    'instagram': 'https://www.instagram.com/missionx_offici?igsh=MWZlMHcyaGZleXlubw=='
+    'instagram': 'https://www.instagram.com/missionx_offic?igsh=MWZlMHcyaGZleXlubw=='
 }
 
 # 1. دوال اتصال قاعدة البيانات
