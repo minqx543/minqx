@@ -27,6 +27,15 @@ EMOJI = {
     'social': '🌐'
 }
 
+# روابط المنصات الاجتماعية
+SOCIAL_LINKS = {
+    'facebook': 'https://www.facebook.com/share/19AMU41hhs/',
+    'tiktok': 'https://www.tiktok.com/@missionx_offici?_t=ZS-8vgxNwgERtP&_r=1',
+    'youtube': 'https://youtube.com/@missionx_offici?si=4A549AkxABu523zi',
+    'telegram': 'https://t.me/MissionX_offici',
+    'instagram': 'https://www.instagram.com/missionx_offici?igsh=MWZlMHcyaGZleXlubw=='
+}
+
 # 1. دوال اتصال قاعدة البيانات
 def get_db_connection():
     try:
@@ -43,21 +52,15 @@ def init_database():
             return False
             
         with conn.cursor() as c:
-            # إنشاء جدول المستخدمين إذا لم يكن موجوداً
             c.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGINT PRIMARY KEY,
                     username TEXT,
+                    first_name TEXT,
                     balance INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     welcome_bonus_received BOOLEAN DEFAULT FALSE
                 )
-            """)
-            
-            # إضافة العمود first_name إذا لم يكن موجوداً (للتأكد من التوافق مع الإصدارات القديمة)
-            c.execute("""
-                ALTER TABLE users 
-                ADD COLUMN IF NOT EXISTS first_name TEXT
             """)
             
             c.execute("""
@@ -110,7 +113,6 @@ def add_user(user_id, username, first_name=None):
             return False
             
         with conn.cursor() as c:
-            # إدراج المستخدم مع first_name أو تحديث البيانات
             c.execute("""
                 INSERT INTO users (user_id, username, first_name)
                 VALUES (%s, %s, %s)
@@ -125,7 +127,6 @@ def add_user(user_id, username, first_name=None):
             conn.commit()
             
             if not welcome_bonus_received:
-                # منح نقاط ترحيبية للمستخدم الجديد
                 c.execute("""
                     UPDATE users 
                     SET balance = balance + 100,
@@ -149,16 +150,13 @@ def add_referral(referred_user_id, referred_by):
             return False
             
         with conn.cursor() as c:
-            # التحقق من عدم وجود إحالة مسبقة
             c.execute("SELECT 1 FROM referrals WHERE referred_user_id = %s", (referred_user_id,))
             if c.fetchone():
                 return False
                 
-            # التحقق من وجود المستخدم المحيل
             if not user_exists(referred_by):
                 return False
                 
-            # تسجيل الإحالة الجديدة
             c.execute("""
                 INSERT INTO referrals (referred_user_id, referred_by)
                 VALUES (%s, %s)
@@ -166,7 +164,6 @@ def add_referral(referred_user_id, referred_by):
             """, (referred_user_id, referred_by))
             
             if c.fetchone():
-                # منح نقاط للمستخدم المحيل
                 c.execute("""
                     UPDATE users 
                     SET balance = balance + 10 
@@ -265,8 +262,14 @@ async def start(update: Update, context: CallbackContext):
 {EMOJI['link']} استخدم /referral لدعوة الأصدقاء
 {EMOJI['leaderboard']} استخدم /leaderboard لرؤية المتصدرين
 {EMOJI['balance']} استخدم /balance لمعرفة رصيدك
+{EMOJI['social']} تابعنا على المنصات الاجتماعية:
+🔗 [فيسبوك]({SOCIAL_LINKS['facebook']})
+🎵 [تيك توك]({SOCIAL_LINKS['tiktok']})
+🎥 [يوتيوب]({SOCIAL_LINKS['youtube']})
+📢 [تلجرام]({SOCIAL_LINKS['telegram']})
+📸 [إنستجرام]({SOCIAL_LINKS['instagram']})
 """
-    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+    await update.message.reply_text(welcome_message, parse_mode='Markdown', disable_web_page_preview=True)
 
 async def leaderboard(update: Update, context: CallbackContext):
     leaderboard_data = get_leaderboard()
@@ -302,8 +305,15 @@ async def referral(update: Update, context: CallbackContext):
 {EMOJI['confetti']} *معلومات الإحالة:*
 - ستحصل على {EMOJI['point']}10 نقاط لكل صديق ينضم عبر الرابط
 - كلما زاد عدد الإحالات، ارتفع ترتيبك في لوحة المتصدرين {EMOJI['leaderboard']}
+
+{EMOJI['social']} *تابعنا على المنصات الاجتماعية:*
+🔗 [فيسبوك]({SOCIAL_LINKS['facebook']})
+🎵 [تيك توك]({SOCIAL_LINKS['tiktok']})
+🎥 [يوتيوب]({SOCIAL_LINKS['youtube']})
+📢 [تلجرام]({SOCIAL_LINKS['telegram']})
+📸 [إنستجرام]({SOCIAL_LINKS['instagram']})
 """
-    await update.message.reply_text(referral_message, parse_mode='Markdown')
+    await update.message.reply_text(referral_message, parse_mode='Markdown', disable_web_page_preview=True)
 
 async def balance(update: Update, context: CallbackContext):
     user = update.message.from_user
@@ -318,8 +328,15 @@ async def balance(update: Update, context: CallbackContext):
 
 {EMOJI['link']} استخدم /referral لكسب المزيد من النقاط
 {EMOJI['leaderboard']} استخدم /leaderboard لرؤية ترتيبك
+
+{EMOJI['social']} *تابعنا على المنصات الاجتماعية:*
+🔗 [فيسبوك]({SOCIAL_LINKS['facebook']})
+🎵 [تيك توك]({SOCIAL_LINKS['tiktok']})
+🎥 [يوتيوب]({SOCIAL_LINKS['youtube']})
+📢 [تلجرام]({SOCIAL_LINKS['telegram']})
+📸 [إنستجرام]({SOCIAL_LINKS['instagram']})
 """
-    await update.message.reply_text(balance_message, parse_mode='Markdown')
+    await update.message.reply_text(balance_message, parse_mode='Markdown', disable_web_page_preview=True)
 
 async def error_handler(update: object, context: CallbackContext) -> None:
     print(f"{EMOJI['error']} حدث خطأ: {context.error}")
