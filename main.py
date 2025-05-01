@@ -34,6 +34,7 @@ SOCIAL_LINKS = {
     'youtube': 'https://youtube.com/@missionx_offici?si=4A549AkxABu523zi',
     'telegram': 'https://t.me/MissionX_offici',
     'instagram': 'https://www.instagram.com/missionx_offic?igsh=MWZlMHcyaGZleXlubw=='
+    'x': 'https://x.com/MissionX_Offici?t=ZIfH_PyfA-WmFyJ9JzVQCA&s=09'
 }
 
 # 1. دوال اتصال قاعدة البيانات
