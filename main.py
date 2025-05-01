@@ -33,7 +33,7 @@ SOCIAL_LINKS = {
     'tiktok': 'https://www.tiktok.com/@missionx_offici?_t=ZS-8vgxNwgERtP&_r=1',
     'youtube': 'https://youtube.com/@missionx_offici?si=4A549AkxABu523zi',
     'telegram': 'https://t.me/MissionX_offici',
-    'instagram': 'https://www.instagram.com/missionx_offic?igsh=MWZlMHcyaGZleXlubw=='
+    'instagram': 'https://www.instagram.com/missionx_offici?igsh=MWZlMHcyaGZleXlubw==',
     'x': 'https://x.com/MissionX_Offici?t=ZIfH_PyfA-WmFyJ9JzVQCA&s=09'
 }
 
@@ -263,8 +263,10 @@ async def start(update: Update, context: CallbackContext):
 {EMOJI['link']} استخدم /referral لدعوة الأصدقاء
 {EMOJI['leaderboard']} استخدم /leaderboard لرؤية المتصدرين
 {EMOJI['balance']} استخدم /balance لمعرفة رصيدك
-{EMOJI['social']} تابعنا على المنصات الاجتماعية:
+
+{EMOJI['social']} *تابعنا على المنصات الاجتماعية:*
 🔗 [فيسبوك]({SOCIAL_LINKS['facebook']})
+🐦 [إكس (تويتر)]({SOCIAL_LINKS['x']})
 🎵 [تيك توك]({SOCIAL_LINKS['tiktok']})
 🎥 [يوتيوب]({SOCIAL_LINKS['youtube']})
 📢 [تلجرام]({SOCIAL_LINKS['telegram']})
@@ -309,6 +311,7 @@ async def referral(update: Update, context: CallbackContext):
 
 {EMOJI['social']} *تابعنا على المنصات الاجتماعية:*
 🔗 [فيسبوك]({SOCIAL_LINKS['facebook']})
+🐦 [إكس (تويتر)]({SOCIAL_LINKS['x']})
 🎵 [تيك توك]({SOCIAL_LINKS['tiktok']})
 🎥 [يوتيوب]({SOCIAL_LINKS['youtube']})
 📢 [تلجرام]({SOCIAL_LINKS['telegram']})
@@ -332,6 +335,7 @@ async def balance(update: Update, context: CallbackContext):
 
 {EMOJI['social']} *تابعنا على المنصات الاجتماعية:*
 🔗 [فيسبوك]({SOCIAL_LINKS['facebook']})
+🐦 [إكس (تويتر)]({SOCIAL_LINKS['x']})
 🎵 [تيك توك]({SOCIAL_LINKS['tiktok']})
 🎥 [يوتيوب]({SOCIAL_LINKS['youtube']})
 📢 [تلجرام]({SOCIAL_LINKS['telegram']})
