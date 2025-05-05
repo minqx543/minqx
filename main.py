@@ -29,7 +29,7 @@ EMOJI = {
 
 # روابط المنصات الاجتماعية
 SOCIAL_LINKS = {
-    'facebook': 'https://www.facebook.com/share/19AMU41hhs/',
+    'facebook': 'https://www.facebook.com/khamisalrajab?mibextid=ZbWKwL',
     'tiktok': 'https://www.tiktok.com/@missionx_offici?_t=ZS-8vgxNwgERtP&_r=1',
     'youtube': 'https://youtube.com/@missionx_offici?si=4A549AkxABu523zi',
     'telegram': 'https://t.me/MissionX_offici',
